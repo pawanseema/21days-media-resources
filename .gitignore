@@ -1,0 +1,8 @@
+api_key.txt
+openai_api_key.txt
+*.pyc
+__pycache__/
+.env
+chroma_free_store/
+*.csv
+

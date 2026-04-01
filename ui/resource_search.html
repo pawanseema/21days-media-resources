@@ -1,0 +1,455 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahaja Yoga Resource Search</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .header p {
+      font-size: 1.1em;
+      opacity: 0.9;
+    }
+
+    .search-form {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      margin-bottom: 30px;
+    }
+
+    .search-input-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    #query {
+      flex: 1;
+      padding: 15px 20px;
+      font-size: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    #query:focus {
+      border-color: #667eea;
+    }
+
+    #searchBtn {
+      padding: 15px 30px;
+      font-size: 16px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #searchBtn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+
+    #searchBtn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .loading {
+      text-align: center;
+      color: white;
+      font-size: 18px;
+      padding: 40px;
+      display: none;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .error {
+      background: #ff6b6b;
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .results-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 25px;
+    }
+
+    .result-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      transition: transform 0.3s, box-shadow 0.3s;
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .result-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .card-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      color: white;
+    }
+
+    .resource-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .topic-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 8px;
+    }
+
+    .card-content {
+      padding: 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .description {
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 15px;
+      font-size: 14px;
+      flex: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
+
+    .tag {
+      background: #f0f0f0;
+      color: #667eea;
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 15px;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .file-type-badge {
+      background: #4ecdc4;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .confidence-badge {
+      background: #51cf66;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .download-hint {
+      color: #667eea;
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    .no-results {
+      text-align: center;
+      color: white;
+      font-size: 18px;
+      padding: 40px;
+      display: none;
+    }
+
+    @media (max-width: 768px) {
+      .results-container {
+        grid-template-columns: 1fr;
+      }
+
+      .search-input-group {
+        flex-direction: column;
+      }
+
+      #searchBtn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📚 Resource Search</h1>
+      <p>Find meditation handouts and resources</p>
+    </div>
+
+    <div class="search-form">
+      <div class="search-input-group">
+        <input 
+          type="text" 
+          id="query" 
+          placeholder="Search for resources, topics, or keywords..."
+          autocomplete="off"
+        />
+        <button id="searchBtn">Search</button>
+      </div>
+    </div>
+
+    <div class="error" id="errorMessage"></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Searching resources...</p>
+    </div>
+
+    <div class="no-results" id="noResults">
+      <p>No resources found. Try a different search query.</p>
+    </div>
+
+    <div class="results-container" id="resultsContainer"></div>
+  </div>
+
+  <script>
+    const API_URL = '/api/resources/search';
+    const DEFAULT_TOP_K = 5;
+
+    const queryInput = document.getElementById('query');
+    const searchBtn = document.getElementById('searchBtn');
+    const resultsContainer = document.getElementById('resultsContainer');
+    const loadingDiv = document.getElementById('loading');
+    const errorDiv = document.getElementById('errorMessage');
+    const noResultsDiv = document.getElementById('noResults');
+
+    // Handle Enter key
+    queryInput.addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+
+    searchBtn.addEventListener('click', performSearch);
+
+    async function performSearch() {
+      const query = queryInput.value.trim();
+      
+      if (!query) {
+        showError('Please enter a search query');
+        return;
+      }
+
+      // Clear previous results
+      resultsContainer.innerHTML = '';
+      hideError();
+      hideNoResults();
+      showLoading();
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ 
+            query: query, 
+            top_k: DEFAULT_TOP_K 
+          })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Search failed');
+        }
+
+        displayResults(data.results, data.query);
+
+      } catch (error) {
+        showError(error.message || 'Failed to search resources. Please try again.');
+      } finally {
+        hideLoading();
+      }
+    }
+
+    function displayResults(results, query) {
+      if (results.length === 0) {
+        showNoResults();
+        return;
+      }
+
+      resultsContainer.innerHTML = '';
+
+      results.forEach(result => {
+        const card = createResourceCard(result);
+        resultsContainer.appendChild(card);
+      });
+    }
+
+    function createResourceCard(result) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      
+      // Make card clickable - opens download URL in new tab
+      card.addEventListener('click', function() {
+        if (result.download_url) {
+          window.open(result.download_url, '_blank');
+        }
+      });
+
+      // Format tags - handle both array and string formats
+      let tagsArray = [];
+      if (result.tags) {
+        if (Array.isArray(result.tags)) {
+          tagsArray = result.tags;
+        } else if (typeof result.tags === 'string') {
+          tagsArray = result.tags.split(',').map(t => t.trim()).filter(t => t);
+        }
+      }
+      const tagsHtml = tagsArray.length > 0
+        ? tagsArray.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')
+        : '';
+
+      // Format description (truncate if too long)
+      const description = result.description || 'No description available';
+      const truncatedDesc = description.length > 150 
+        ? description.substring(0, 150) + '...' 
+        : description;
+
+      card.innerHTML = `
+        <div class="card-header">
+          <div class="resource-title">${escapeHtml(result.title)}</div>
+          <span class="topic-badge">${escapeHtml(result.topic || 'General')}</span>
+        </div>
+        <div class="card-content">
+          <div class="description">${escapeHtml(truncatedDesc)}</div>
+          ${tagsHtml ? `<div class="tags-container">${tagsHtml}</div>` : ''}
+          <div class="download-hint">Click to download →</div>
+        </div>
+        <div class="card-footer">
+          <span class="file-type-badge">${escapeHtml(result.file_type || 'file').toUpperCase()}</span>
+          <span class="confidence-badge">${(result.confidence * 100).toFixed(0)}% match</span>
+        </div>
+      `;
+
+      return card;
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+
+    function showLoading() {
+      loadingDiv.style.display = 'block';
+      searchBtn.disabled = true;
+    }
+
+    function hideLoading() {
+      loadingDiv.style.display = 'none';
+      searchBtn.disabled = false;
+    }
+
+    function showError(message) {
+      errorDiv.textContent = message;
+      errorDiv.style.display = 'block';
+    }
+
+    function hideError() {
+      errorDiv.style.display = 'none';
+    }
+
+    function showNoResults() {
+      noResultsDiv.style.display = 'block';
+    }
+
+    function hideNoResults() {
+      noResultsDiv.style.display = 'none';
+    }
+  </script>
+</body>
+</html>
+

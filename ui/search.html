@@ -1,0 +1,960 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sahaja Yoga Video Search</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: #67b7f8;
+      min-height: 100vh;
+      padding: 0;
+    }
+
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      padding: 0 20px 20px;
+    }
+
+    .top-hero {
+      display: flex;
+      align-items: flex-start;
+      justify-content: center;
+      gap: 28px;
+      margin-bottom: 8px;
+      color: white;
+    }
+
+    .hero-content {
+      flex: 1;
+      min-width: 0;
+      max-width: 860px;
+    }
+
+    .header {
+      background: #ffcf32;
+      margin: 0 calc(50% - 50vw) 10px;
+      padding: 6px 20px 5px;
+      text-align: center;
+    }
+
+    /* Full artwork visible: PNG already includes circular portrait + curved name text */
+    .header-portrait {
+      line-height: 0;
+      flex-shrink: 0;
+    }
+
+    .header-portrait img {
+      display: block;
+      width: auto;
+      height: auto;
+      max-height: 200px;
+      max-width: min(240px, 42vw);
+      object-fit: contain;
+      filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.22));
+    }
+
+    .header-text {
+      text-align: center;
+      min-width: 0;
+      padding-top: 0;
+    }
+
+    .header-text p {
+      color: #ffffff;
+      opacity: 0.95;
+      font-size: 0.92em;
+      text-shadow: 1px 1px 3px rgba(0,0,0,0.15);
+      margin: 0;
+      line-height: 1;
+    }
+
+    .header h1 {
+      color: #ffffff;
+      font-size: 2.1em;
+      line-height: 1;
+      margin-bottom: 0;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .search-form {
+      background: white;
+      padding: 20px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      margin-bottom: 12px;
+    }
+
+    .search-panel {
+      background: rgba(255, 255, 255, 0.18);
+      border: 2px solid rgba(255, 255, 255, 0.7);
+      border-radius: 20px;
+      padding: 14px;
+      box-shadow: 0 8px 20px rgba(0, 0, 0, 0.08);
+    }
+
+    .context-buttons {
+      display: flex;
+      gap: 15px;
+      justify-content: center;
+      margin-top: 6px;
+      flex-wrap: wrap;
+    }
+
+    .context-btn {
+      padding: 6px 16px;
+      font-size: 14px;
+      min-width: 170px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      background: white;
+      color: #666;
+      cursor: pointer;
+      font-weight: 500;
+      transition: all 0.3s;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+    }
+
+    .context-btn:hover {
+      border-color: #667eea;
+      color: #667eea;
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.2);
+    }
+
+    .context-btn.active {
+      background: #133b5b;
+      color: white;
+      border-color: #133b5b;
+      font-weight: 700;
+      box-shadow: 0 4px 15px rgba(19, 59, 91, 0.35);
+    }
+
+    .context-btn.active:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 6px 20px rgba(19, 59, 91, 0.45);
+    }
+
+    .search-input-group {
+      display: flex;
+      gap: 10px;
+    }
+
+    #query {
+      flex: 1;
+      padding: 15px 20px;
+      font-size: 17px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.3s;
+    }
+
+    #query:focus {
+      border-color: #667eea;
+    }
+
+    #searchBtn {
+      padding: 15px 30px;
+      font-size: 17px;
+      background: #133b5b;
+      color: white;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    #searchBtn:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+
+    #searchBtn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .loading {
+      text-align: center;
+      color: white;
+      font-size: 18px;
+      padding: 40px;
+      display: none;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .error {
+      background: #ff6b6b;
+      color: white;
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .results-container {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(350px, 1fr));
+      gap: 25px;
+    }
+
+    .result-card {
+      background: white;
+      border-radius: 12px;
+      overflow: hidden;
+      box-shadow: 0 5px 20px rgba(0,0,0,0.1);
+      transition: transform 0.3s, box-shadow 0.3s;
+      cursor: pointer;
+    }
+
+    .result-card:hover {
+      transform: translateY(-5px);
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    /* Resource card styles */
+    .resource-card-header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      padding: 20px;
+      color: white;
+    }
+
+    .resource-title {
+      font-size: 20px;
+      font-weight: 600;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .topic-badge {
+      display: inline-block;
+      background: rgba(255,255,255,0.2);
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 500;
+      margin-top: 8px;
+    }
+
+    .resource-card-content {
+      padding: 20px;
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+    }
+
+    .resource-description {
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 15px;
+      font-size: 14px;
+      flex: 1;
+      display: -webkit-box;
+      -webkit-line-clamp: 3;
+      -webkit-box-orient: vertical;
+      overflow: hidden;
+    }
+
+    .tags-container {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 15px;
+    }
+
+    .tag {
+      background: #f0f0f0;
+      color: #667eea;
+      padding: 4px 10px;
+      border-radius: 15px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .resource-card-footer {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding-top: 15px;
+      border-top: 1px solid #e0e0e0;
+    }
+
+    .file-type-badge {
+      background: #4ecdc4;
+      color: white;
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 600;
+      text-transform: uppercase;
+    }
+
+    .download-hint {
+      color: #667eea;
+      font-size: 12px;
+      font-weight: 500;
+      margin-top: 10px;
+      text-align: center;
+    }
+
+    .thumbnail-container {
+      position: relative;
+      width: 100%;
+      padding-top: 56.25%; /* 16:9 aspect ratio */
+      background: #000;
+      overflow: hidden;
+    }
+
+    .thumbnail-container img {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .play-overlay {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      width: 60px;
+      height: 60px;
+      background: rgba(255,255,255,0.9);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      transition: all 0.3s;
+    }
+
+    .play-overlay::after {
+      content: '';
+      width: 0;
+      height: 0;
+      border-left: 20px solid #667eea;
+      border-top: 12px solid transparent;
+      border-bottom: 12px solid transparent;
+      margin-left: 5px;
+    }
+
+    .result-card:hover .play-overlay {
+      background: rgba(255,255,255,1);
+      transform: translate(-50%, -50%) scale(1.1);
+    }
+
+    .card-content {
+      padding: 20px;
+    }
+
+    .video-title {
+      font-size: 18px;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      line-height: 1.4;
+    }
+
+    .section-title {
+      font-size: 16px;
+      color: #667eea;
+      font-weight: 500;
+      margin-bottom: 10px;
+    }
+
+    .timestamp {
+      display: inline-block;
+      background: #f0f0f0;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 14px;
+      color: #666;
+      margin-bottom: 12px;
+    }
+
+    .summary {
+      color: #555;
+      line-height: 1.6;
+      margin-bottom: 15px;
+      font-size: 14px;
+    }
+
+    .metadata {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .chakra-badge {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .confidence-badge {
+      background: #4ecdc4;
+      color: white;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 12px;
+      font-weight: 500;
+    }
+
+    .quote {
+      background: #fff9e6;
+      padding: 12px;
+      border-left: 4px solid #ffd93d;
+      border-radius: 4px;
+      font-style: italic;
+      color: #666;
+      margin-bottom: 12px;
+      font-size: 14px;
+    }
+
+    .hashtags {
+      color: #667eea;
+      font-size: 13px;
+    }
+
+    .no-results {
+      text-align: center;
+      color: white;
+      font-size: 18px;
+      padding: 40px;
+      display: none;
+    }
+
+    /* Modal Styles */
+    .modal {
+      display: none;
+      position: fixed;
+      z-index: 1000;
+      left: 0;
+      top: 0;
+      width: 100%;
+      height: 100%;
+      background: rgba(0,0,0,0.9);
+      animation: fadeIn 0.3s;
+    }
+
+    @keyframes fadeIn {
+      from { opacity: 0; }
+      to { opacity: 1; }
+    }
+
+    .modal-content {
+      position: relative;
+      margin: 2% auto;
+      width: 90%;
+      max-width: 1200px;
+      background: #000;
+      border-radius: 12px;
+      overflow: hidden;
+      animation: slideDown 0.3s;
+    }
+
+    @keyframes slideDown {
+      from {
+        transform: translateY(-50px);
+        opacity: 0;
+      }
+      to {
+        transform: translateY(0);
+        opacity: 1;
+      }
+    }
+
+    .modal-header {
+      background: #1a1a1a;
+      padding: 15px 20px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .modal-title {
+      color: white;
+      font-size: 18px;
+      font-weight: 600;
+    }
+
+    .close-btn {
+      background: none;
+      border: none;
+      color: white;
+      font-size: 28px;
+      cursor: pointer;
+      padding: 0;
+      width: 30px;
+      height: 30px;
+      line-height: 30px;
+      transition: color 0.3s;
+    }
+
+    .close-btn:hover {
+      color: #ff6b6b;
+    }
+
+    .video-container {
+      position: relative;
+      padding-bottom: 56.25%; /* 16:9 aspect ratio */
+      height: 0;
+      overflow: hidden;
+    }
+
+    .video-container iframe {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+    }
+
+    @media (max-width: 768px) {
+      .results-container {
+        grid-template-columns: 1fr;
+      }
+
+      .search-input-group {
+        flex-direction: column;
+      }
+
+      .top-hero {
+        flex-direction: column;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .header-portrait img {
+        max-height: 130px;
+        max-width: min(185px, 55vw);
+      }
+
+      .header-text {
+        text-align: center;
+        padding-top: 0;
+      }
+
+      .header h1 {
+        font-size: 1.85em;
+      }
+
+      .search-form {
+        width: 100%;
+        padding: 16px;
+      }
+
+      .modal-content {
+        width: 95%;
+        margin: 5% auto;
+      }
+
+      .context-buttons {
+        flex-direction: column;
+      }
+
+      .context-btn {
+        width: 100%;
+        justify-content: center;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div class="header-text">
+        <h1>Let's Meditate  For 21 Days</h1>
+        <p>Search videos, find resources, or request a mentor</p>
+      </div>
+    </div>
+    <div class="top-hero">
+      <div class="header-portrait">
+        <img
+          src="/ui/Shri-Mataji-round-blue-shadow-white-name.png"
+          alt="Shri Mataji"
+          loading="eager"
+        />
+      </div>
+      <div class="hero-content">
+        <div class="search-panel">
+          <div class="search-form">
+            <div class="search-input-group">
+              <input 
+                type="text" 
+                id="query" 
+                placeholder="Search Videos for meditation topics, chakras, techniques..." 
+                autocomplete="off"
+              />
+              <button id="searchBtn" onclick="performSearch()">Search</button>
+            </div>
+          </div>
+          <div class="context-buttons">
+            <button class="context-btn active" id="btnVideos" onclick="switchContext('videos')">
+              🔍 Videos
+            </button>
+            <button class="context-btn" id="btnHandouts" onclick="switchContext('resources')">
+              📚 Search Handouts
+            </button>
+            <button class="context-btn" id="btnMentor" onclick="openMentorForm()">
+              👤 I want a Mentor
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="error" id="error"></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Searching for relevant videos...</p>
+    </div>
+
+    <div class="no-results" id="noResults">
+      <p>No results found. Try a different search query.</p>
+    </div>
+
+    <div class="results-container" id="results"></div>
+  </div>
+
+  <!-- Modal for video embedding -->
+  <div class="modal" id="videoModal">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle"></div>
+        <button class="close-btn" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="video-container" id="videoContainer"></div>
+    </div>
+  </div>
+
+  <script>
+    // Context state management
+    let searchMode = 'videos'; // 'videos' or 'resources'
+    const MENTOR_FORM_URL = 'https://tinyurl.com/RequestAMentorWC';
+    
+    // API URLs
+    const VIDEO_API_URL = '/search';
+    const RESOURCE_API_URL = '/api/resources/search';
+
+    // Placeholders for different contexts
+    const PLACEHOLDERS = {
+      videos: 'Search Videos for meditation topics, chakras, techniques...',
+      resources: 'Search for handouts, resources, topics...'
+    };
+
+    // Allow Enter key to trigger search
+    document.getElementById('query').addEventListener('keypress', function(e) {
+      if (e.key === 'Enter') {
+        performSearch();
+      }
+    });
+
+    function switchContext(mode) {
+      if (mode === searchMode) return; // Already in this mode
+      
+      searchMode = mode;
+      
+      // Update button states
+      document.getElementById('btnVideos').classList.toggle('active', mode === 'videos');
+      document.getElementById('btnHandouts').classList.toggle('active', mode === 'resources');
+      
+      // Clear search input and update placeholder
+      const queryInput = document.getElementById('query');
+      queryInput.value = '';
+      queryInput.placeholder = PLACEHOLDERS[mode];
+      
+      // Clear results
+      document.getElementById('results').innerHTML = '';
+      document.getElementById('error').style.display = 'none';
+      document.getElementById('noResults').style.display = 'none';
+      
+      // Update loading message
+      const loadingText = document.querySelector('#loading p');
+      if (loadingText) {
+        loadingText.textContent = mode === 'videos' 
+          ? 'Searching for relevant videos...' 
+          : 'Searching resources...';
+      }
+    }
+
+    function openMentorForm() {
+      window.open(MENTOR_FORM_URL, '_blank');
+    }
+
+    async function performSearch() {
+      const query = document.getElementById('query').value.trim();
+      const resultsContainer = document.getElementById('results');
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const noResults = document.getElementById('noResults');
+      const searchBtn = document.getElementById('searchBtn');
+
+      // Clear previous results
+      resultsContainer.innerHTML = '';
+      error.style.display = 'none';
+      noResults.style.display = 'none';
+
+      if (!query) {
+        showError('Please enter a search query');
+        return;
+      }
+
+      // Show loading state
+      loading.style.display = 'block';
+      searchBtn.disabled = true;
+
+      try {
+        // Use appropriate API based on search mode
+        const apiUrl = searchMode === 'videos' ? VIDEO_API_URL : RESOURCE_API_URL;
+        
+        const response = await fetch(apiUrl, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ query: query, top_k: 5 })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Search failed');
+        }
+
+        loading.style.display = 'none';
+        searchBtn.disabled = false;
+
+        if (data.results && data.results.length > 0) {
+          displayResults(data.results, searchMode);
+        } else {
+          noResults.style.display = 'block';
+        }
+      } catch (err) {
+        loading.style.display = 'none';
+        searchBtn.disabled = false;
+        showError(err.message || 'Failed to search. Make sure the API server is running on port 5005.');
+        console.error('Search error:', err);
+      }
+    }
+
+    function displayResults(results, mode) {
+      const resultsContainer = document.getElementById('results');
+      resultsContainer.innerHTML = '';
+
+      results.forEach((result, index) => {
+        const card = mode === 'videos' 
+          ? createVideoCard(result, index)
+          : createResourceCard(result);
+        resultsContainer.appendChild(card);
+      });
+    }
+
+    function createVideoCard(result, index) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      card.onclick = () => openVideoModal(result);
+
+      // Extract video ID from URL
+      const videoId = extractVideoId(result.url);
+      const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
+
+      // Convert timestamp to seconds
+      const timestampSeconds = convertTimestampToSeconds(result.timestamp);
+
+      card.innerHTML = `
+        <div class="thumbnail-container">
+          <img src="${thumbnailUrl}" alt="${result.video_title}" 
+               onerror="this.src='https://img.youtube.com/vi/${videoId}/hqdefault.jpg'">
+          <div class="play-overlay"></div>
+        </div>
+        <div class="card-content">
+          <div class="video-title">${escapeHtml(result.video_title)}</div>
+          <div class="section-title">${escapeHtml(result.section_title)}</div>
+          <div class="timestamp">⏱️ ${result.timestamp || 'N/A'}</div>
+          <div class="summary">${escapeHtml(result.summary || 'No summary available')}</div>
+          <div class="metadata">
+            ${result.chakra ? `<span class="chakra-badge">${escapeHtml(result.chakra)}</span>` : ''}
+            ${result.confidence ? `<span class="confidence-badge">Confidence: ${(result.confidence * 100).toFixed(1)}%</span>` : ''}
+          </div>
+          ${result.quote ? `<div class="quote">"${escapeHtml(result.quote)}"</div>` : ''}
+          ${result.hashtags ? `<div class="hashtags">${escapeHtml(result.hashtags)}</div>` : ''}
+        </div>
+      `;
+
+      return card;
+    }
+
+    function createResourceCard(result) {
+      const card = document.createElement('div');
+      card.className = 'result-card';
+      
+      // Make card clickable - opens download URL in new tab
+      card.addEventListener('click', function() {
+        if (result.download_url) {
+          window.open(result.download_url, '_blank');
+        }
+      });
+
+      // Format tags - handle both array and string formats
+      let tagsArray = [];
+      if (result.tags) {
+        if (Array.isArray(result.tags)) {
+          tagsArray = result.tags;
+        } else if (typeof result.tags === 'string') {
+          tagsArray = result.tags.split(',').map(t => t.trim()).filter(t => t);
+        }
+      }
+      const tagsHtml = tagsArray.length > 0
+        ? tagsArray.map(tag => `<span class="tag">${escapeHtml(tag)}</span>`).join('')
+        : '';
+
+      // Format description (truncate if too long)
+      const description = result.description || 'No description available';
+      const truncatedDesc = description.length > 150 
+        ? description.substring(0, 150) + '...' 
+        : description;
+
+      card.innerHTML = `
+        <div class="resource-card-header">
+          <div class="resource-title">${escapeHtml(result.title)}</div>
+          <span class="topic-badge">${escapeHtml(result.topic || 'General')}</span>
+        </div>
+        <div class="resource-card-content">
+          <div class="resource-description">${escapeHtml(truncatedDesc)}</div>
+          ${tagsHtml ? `<div class="tags-container">${tagsHtml}</div>` : ''}
+          <div class="download-hint">Click to download →</div>
+        </div>
+        <div class="resource-card-footer">
+          <span class="file-type-badge">${escapeHtml(result.file_type || 'file').toUpperCase()}</span>
+          <span class="confidence-badge">${(result.confidence * 100).toFixed(0)}% match</span>
+        </div>
+      `;
+
+      return card;
+    }
+
+    function extractVideoId(url) {
+      // Extract YouTube video ID from various URL formats
+      const patterns = [
+        /(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([^&\n?#]+)/,
+        /youtube\.com\/.*[?&]v=([^&\n?#]+)/
+      ];
+
+      for (const pattern of patterns) {
+        const match = url.match(pattern);
+        if (match && match[1]) {
+          return match[1];
+        }
+      }
+      return '';
+    }
+
+    function convertTimestampToSeconds(timestamp) {
+      if (!timestamp) return 0;
+      
+      // Handle formats: "MM:SS" or "HH:MM:SS"
+      const parts = timestamp.split(':').map(Number);
+      
+      if (parts.length === 2) {
+        // MM:SS format
+        return parts[0] * 60 + parts[1];
+      } else if (parts.length === 3) {
+        // HH:MM:SS format
+        return parts[0] * 3600 + parts[1] * 60 + parts[2];
+      }
+      
+      return 0;
+    }
+
+    function openVideoModal(result) {
+      const modal = document.getElementById('videoModal');
+      const modalTitle = document.getElementById('modalTitle');
+      const videoContainer = document.getElementById('videoContainer');
+
+      const videoId = extractVideoId(result.url);
+      const timestampSeconds = convertTimestampToSeconds(result.timestamp);
+      
+      // Create YouTube embed URL with timestamp
+      const embedUrl = `https://www.youtube.com/embed/${videoId}?start=${timestampSeconds}&autoplay=1`;
+
+      modalTitle.textContent = `${result.video_title} - ${result.section_title}`;
+      videoContainer.innerHTML = `<iframe src="${embedUrl}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+
+      modal.style.display = 'block';
+      document.body.style.overflow = 'hidden'; // Prevent background scrolling
+    }
+
+    function closeModal() {
+      const modal = document.getElementById('videoModal');
+      const videoContainer = document.getElementById('videoContainer');
+      
+      modal.style.display = 'none';
+      videoContainer.innerHTML = ''; // Stop video playback
+      document.body.style.overflow = 'auto'; // Restore scrolling
+    }
+
+    // Close modal when clicking outside
+    window.onclick = function(event) {
+      const modal = document.getElementById('videoModal');
+      if (event.target === modal) {
+        closeModal();
+      }
+    }
+
+    // Close modal with Escape key
+    document.addEventListener('keydown', function(event) {
+      if (event.key === 'Escape') {
+        closeModal();
+      }
+    });
+
+    function showError(message) {
+      const error = document.getElementById('error');
+      error.textContent = message;
+      error.style.display = 'block';
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>

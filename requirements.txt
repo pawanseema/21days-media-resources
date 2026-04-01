@@ -1,0 +1,16 @@
+# Core runtime: Flask API, video + resource search, ingestion, Chroma CLIs
+chromadb>=0.4.22
+openai>=1.12.0
+tenacity>=8.2.0
+flask>=3.0.0
+google-api-python-client>=2.100.0
+
+# Python <3.10: optional backport used by importlib workaround in video_processing.py
+importlib-metadata>=4.8.0
+
+# Optional: search/hybrid_search.py (FAISS index helpers; not used by default API path)
+faiss-cpu>=1.7.4
+numpy>=1.24.0
+
+# Optional: test_resource_ingest.py (HTTP smoke test against running server)
+requests>=2.31.0

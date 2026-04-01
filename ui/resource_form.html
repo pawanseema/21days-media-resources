@@ -1,0 +1,753 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Resource Manager - Sahaja Yoga</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      padding: 20px;
+    }
+
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+    }
+
+    .header {
+      text-align: center;
+      color: white;
+      margin-bottom: 30px;
+    }
+
+    .header h1 {
+      font-size: 2.5em;
+      margin-bottom: 10px;
+      text-shadow: 2px 2px 4px rgba(0,0,0,0.2);
+    }
+
+    .header p {
+      font-size: 1.1em;
+      opacity: 0.9;
+    }
+
+    .form-card {
+      background: white;
+      padding: 40px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+      margin-bottom: 30px;
+    }
+
+    .form-section {
+      margin-bottom: 30px;
+    }
+
+    .form-section-title {
+      font-size: 1.2em;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 15px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .form-group {
+      margin-bottom: 20px;
+    }
+
+    .form-group label {
+      display: block;
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 8px;
+      font-size: 14px;
+    }
+
+    .form-group label .required {
+      color: #ff6b6b;
+      margin-left: 3px;
+    }
+
+    .form-group input[type="text"],
+    .form-group input[type="url"],
+    .form-group textarea,
+    .form-group select {
+      width: 100%;
+      padding: 12px 15px;
+      font-size: 16px;
+      border: 2px solid #e0e0e0;
+      border-radius: 8px;
+      outline: none;
+      transition: border-color 0.3s;
+      font-family: inherit;
+    }
+
+    .form-group input[type="text"]:focus,
+    .form-group input[type="url"]:focus,
+    .form-group textarea:focus,
+    .form-group select:focus {
+      border-color: #667eea;
+    }
+
+    .form-group textarea {
+      resize: vertical;
+      min-height: 120px;
+    }
+
+    .form-group .help-text {
+      font-size: 12px;
+      color: #666;
+      margin-top: 5px;
+    }
+
+    .form-group .char-counter {
+      font-size: 12px;
+      color: #999;
+      text-align: right;
+      margin-top: 5px;
+    }
+
+    .form-group .char-counter.warning {
+      color: #ff9800;
+    }
+
+    .form-group .char-counter.error {
+      color: #ff6b6b;
+    }
+
+    .form-group .field-error {
+      color: #ff6b6b;
+      font-size: 12px;
+      margin-top: 5px;
+      display: none;
+    }
+
+    .form-group.error input,
+    .form-group.error textarea,
+    .form-group.error select {
+      border-color: #ff6b6b;
+    }
+
+    .form-group.error .field-error {
+      display: block;
+    }
+
+    .form-group.success input,
+    .form-group.success textarea,
+    .form-group.success select {
+      border-color: #51cf66;
+    }
+
+    .button-group {
+      display: flex;
+      gap: 15px;
+      justify-content: flex-end;
+      margin-top: 30px;
+      padding-top: 20px;
+      border-top: 2px solid #e0e0e0;
+    }
+
+    .btn {
+      padding: 12px 30px;
+      font-size: 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: transform 0.2s, box-shadow 0.2s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(0,0,0,0.2);
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #667eea;
+      border: 2px solid #667eea;
+    }
+
+    .btn-secondary:hover {
+      background: #f8f9ff;
+    }
+
+    .btn:disabled {
+      opacity: 0.6;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .message {
+      padding: 15px 20px;
+      border-radius: 8px;
+      margin-bottom: 20px;
+      display: none;
+    }
+
+    .message.success {
+      background: #d4edda;
+      color: #155724;
+      border: 1px solid #c3e6cb;
+    }
+
+    .message.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 1px solid #f5c6cb;
+    }
+
+    .loading {
+      text-align: center;
+      color: white;
+      font-size: 18px;
+      padding: 40px;
+      display: none;
+    }
+
+    .spinner {
+      border: 4px solid rgba(255,255,255,0.3);
+      border-top: 4px solid white;
+      border-radius: 50%;
+      width: 40px;
+      height: 40px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 20px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .recent-resources {
+      background: white;
+      padding: 30px;
+      border-radius: 15px;
+      box-shadow: 0 10px 30px rgba(0,0,0,0.2);
+    }
+
+    .recent-resources h2 {
+      font-size: 1.5em;
+      color: #333;
+      margin-bottom: 20px;
+      padding-bottom: 10px;
+      border-bottom: 2px solid #e0e0e0;
+    }
+
+    .resource-item {
+      padding: 15px;
+      border-bottom: 1px solid #e0e0e0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .resource-item:last-child {
+      border-bottom: none;
+    }
+
+    .resource-item .title {
+      font-weight: 600;
+      color: #333;
+      margin-bottom: 5px;
+    }
+
+    .resource-item .meta {
+      font-size: 12px;
+      color: #666;
+    }
+
+    .resource-item .id {
+      font-family: monospace;
+      font-size: 12px;
+      color: #667eea;
+      background: #f8f9ff;
+      padding: 4px 8px;
+      border-radius: 4px;
+    }
+
+    @media (max-width: 768px) {
+      .container {
+        padding: 10px;
+      }
+
+      .form-card {
+        padding: 20px;
+      }
+
+      .button-group {
+        flex-direction: column;
+      }
+
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <h1>📚 Resource Manager</h1>
+      <p>Add meditation handouts and resources to the collection</p>
+    </div>
+
+    <div class="message success" id="successMessage"></div>
+    <div class="message error" id="errorMessage"></div>
+
+    <div class="loading" id="loading">
+      <div class="spinner"></div>
+      <p>Submitting resource...</p>
+    </div>
+
+    <div class="form-card">
+      <form id="resourceForm">
+        <div class="form-section">
+          <div class="form-section-title">Basic Information</div>
+          
+          <div class="form-group" id="titleGroup">
+            <label>
+              Title
+              <span class="required">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="title" 
+              name="title"
+              placeholder="e.g., Chakra Meditation Guide"
+              maxlength="200"
+              required
+            />
+            <div class="char-counter" id="titleCounter">0 / 200 characters</div>
+            <div class="field-error" id="titleError"></div>
+          </div>
+
+          <div class="form-group" id="descriptionGroup">
+            <label>
+              Description
+              <span class="required">*</span>
+            </label>
+            <textarea 
+              id="description" 
+              name="description"
+              placeholder="Describe the resource content, what users will learn, key topics covered..."
+              maxlength="2000"
+              required
+            ></textarea>
+            <div class="char-counter" id="descriptionCounter">0 / 2000 characters</div>
+            <div class="field-error" id="descriptionError"></div>
+          </div>
+
+          <div class="form-group" id="topicGroup">
+            <label>
+              Topic
+              <span class="required">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="topic" 
+              name="topic"
+              placeholder="e.g., Chakras, Meditation, Breathing Techniques"
+              maxlength="100"
+              required
+            />
+            <div class="char-counter" id="topicCounter">0 / 100 characters</div>
+            <div class="field-error" id="topicError"></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Categorization</div>
+          
+          <div class="form-group" id="tagsGroup">
+            <label>
+              Tags
+              <span class="required">*</span>
+            </label>
+            <input 
+              type="text" 
+              id="tags" 
+              name="tags"
+              placeholder="e.g., chakras, meditation, beginner (comma-separated)"
+              required
+            />
+            <div class="help-text">Enter tags separated by commas. At least one tag is required.</div>
+            <div class="field-error" id="tagsError"></div>
+          </div>
+        </div>
+
+        <div class="form-section">
+          <div class="form-section-title">Resource Link</div>
+          
+          <div class="form-group" id="downloadUrlGroup">
+            <label>
+              Download URL
+              <span class="required">*</span>
+            </label>
+            <input 
+              type="url" 
+              id="downloadUrl" 
+              name="download_url"
+              placeholder="https://example.com/handouts/resource.pdf"
+              required
+            />
+            <div class="help-text">Must start with http:// or https://</div>
+            <div class="field-error" id="downloadUrlError"></div>
+          </div>
+
+          <div class="form-group" id="fileTypeGroup">
+            <label>
+              File Type
+              <span class="required">*</span>
+            </label>
+            <select id="fileType" name="file_type" required>
+              <option value="">Select file type...</option>
+              <option value="pdf" selected>PDF</option>
+              <option value="docx">DOCX</option>
+              <option value="doc">DOC</option>
+              <option value="txt">TXT</option>
+              <option value="html">HTML</option>
+            </select>
+            <div class="field-error" id="fileTypeError"></div>
+          </div>
+        </div>
+
+        <div class="button-group">
+          <button type="button" class="btn btn-secondary" onclick="clearForm()">Clear Form</button>
+          <button type="submit" class="btn btn-primary" id="submitBtn">Submit Resource</button>
+        </div>
+      </form>
+    </div>
+
+    <div class="recent-resources" id="recentResources" style="display: none;">
+      <h2>Recent Resources</h2>
+      <div id="recentResourcesList"></div>
+    </div>
+  </div>
+
+  <script>
+    const API_URL = '/api/resources/ingest';
+    const MAX_RECENT_RESOURCES = 5;
+
+    // Character counters
+    document.getElementById('title').addEventListener('input', function() {
+      updateCharCounter('title', 200);
+    });
+
+    document.getElementById('description').addEventListener('input', function() {
+      updateCharCounter('description', 2000);
+    });
+
+    document.getElementById('topic').addEventListener('input', function() {
+      updateCharCounter('topic', 100);
+    });
+
+    function updateCharCounter(fieldId, maxLength) {
+      const field = document.getElementById(fieldId);
+      const counter = document.getElementById(fieldId + 'Counter');
+      const length = field.value.length;
+      const percentage = (length / maxLength) * 100;
+      
+      counter.textContent = `${length} / ${maxLength} characters`;
+      
+      counter.className = 'char-counter';
+      if (percentage > 90) {
+        counter.classList.add('error');
+      } else if (percentage > 75) {
+        counter.classList.add('warning');
+      }
+    }
+
+    // Form validation
+    function validateField(fieldId, validator) {
+      const field = document.getElementById(fieldId);
+      const group = document.getElementById(fieldId + 'Group');
+      const error = document.getElementById(fieldId + 'Error');
+      const value = field.value.trim();
+
+      const result = validator(value);
+      
+      group.classList.remove('error', 'success');
+      error.textContent = '';
+      error.style.display = 'none';
+
+      if (result.isValid) {
+        group.classList.add('success');
+        return true;
+      } else {
+        group.classList.add('error');
+        error.textContent = result.message;
+        error.style.display = 'block';
+        return false;
+      }
+    }
+
+    function validateTitle(value) {
+      if (!value) {
+        return { isValid: false, message: 'Title is required' };
+      }
+      if (value.length > 200) {
+        return { isValid: false, message: 'Title cannot exceed 200 characters' };
+      }
+      return { isValid: true };
+    }
+
+    function validateDescription(value) {
+      if (!value) {
+        return { isValid: false, message: 'Description is required' };
+      }
+      if (value.length < 10) {
+        return { isValid: false, message: 'Description must be at least 10 characters' };
+      }
+      if (value.length > 2000) {
+        return { isValid: false, message: 'Description cannot exceed 2000 characters' };
+      }
+      return { isValid: true };
+    }
+
+    function validateTopic(value) {
+      if (!value) {
+        return { isValid: false, message: 'Topic is required' };
+      }
+      if (value.length > 100) {
+        return { isValid: false, message: 'Topic cannot exceed 100 characters' };
+      }
+      return { isValid: true };
+    }
+
+    function validateTags(value) {
+      if (!value) {
+        return { isValid: false, message: 'At least one tag is required' };
+      }
+      const tags = value.split(',').map(t => t.trim()).filter(t => t);
+      if (tags.length === 0) {
+        return { isValid: false, message: 'At least one tag is required' };
+      }
+      if (tags.length > 50) {
+        return { isValid: false, message: 'Cannot have more than 50 tags' };
+      }
+      for (const tag of tags) {
+        if (tag.length > 50) {
+          return { isValid: false, message: 'Each tag cannot exceed 50 characters' };
+        }
+      }
+      return { isValid: true };
+    }
+
+    function validateUrl(value) {
+      if (!value) {
+        return { isValid: false, message: 'Download URL is required' };
+      }
+      if (!value.startsWith('http://') && !value.startsWith('https://')) {
+        return { isValid: false, message: 'URL must start with http:// or https://' };
+      }
+      try {
+        new URL(value);
+        return { isValid: true };
+      } catch {
+        return { isValid: false, message: 'Invalid URL format' };
+      }
+    }
+
+    function validateFileType(value) {
+      if (!value) {
+        return { isValid: false, message: 'File type is required' };
+      }
+      return { isValid: true };
+    }
+
+    // Real-time validation on blur
+    document.getElementById('title').addEventListener('blur', () => {
+      validateField('title', validateTitle);
+    });
+
+    document.getElementById('description').addEventListener('blur', () => {
+      validateField('description', validateDescription);
+    });
+
+    document.getElementById('topic').addEventListener('blur', () => {
+      validateField('topic', validateTopic);
+    });
+
+    document.getElementById('tags').addEventListener('blur', () => {
+      validateField('tags', validateTags);
+    });
+
+    document.getElementById('downloadUrl').addEventListener('blur', () => {
+      validateField('downloadUrl', validateUrl);
+    });
+
+    document.getElementById('fileType').addEventListener('change', () => {
+      validateField('fileType', validateFileType);
+    });
+
+    // Form submission
+    document.getElementById('resourceForm').addEventListener('submit', async function(e) {
+      e.preventDefault();
+
+      // Validate all fields
+      const validations = [
+        validateField('title', validateTitle),
+        validateField('description', validateDescription),
+        validateField('topic', validateTopic),
+        validateField('tags', validateTags),
+        validateField('downloadUrl', validateUrl),
+        validateField('fileType', validateFileType)
+      ];
+
+      if (!validations.every(v => v)) {
+        showError('Please fix the errors in the form before submitting.');
+        return;
+      }
+
+      // Prepare data
+      const tags = document.getElementById('tags').value
+        .split(',')
+        .map(t => t.trim())
+        .filter(t => t);
+
+      const resourceData = {
+        title: document.getElementById('title').value.trim(),
+        description: document.getElementById('description').value.trim(),
+        topic: document.getElementById('topic').value.trim(),
+        tags: tags,
+        download_url: document.getElementById('downloadUrl').value.trim(),
+        file_type: document.getElementById('fileType').value
+      };
+
+      // Submit
+      await submitResource(resourceData);
+    });
+
+    async function submitResource(data) {
+      const loading = document.getElementById('loading');
+      const submitBtn = document.getElementById('submitBtn');
+      const successMessage = document.getElementById('successMessage');
+      const errorMessage = document.getElementById('errorMessage');
+
+      // Show loading
+      loading.style.display = 'block';
+      submitBtn.disabled = true;
+      successMessage.style.display = 'none';
+      errorMessage.style.display = 'none';
+
+      try {
+        const response = await fetch(API_URL, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify(data)
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+          // Success
+          const createdDate = new Date(result.created_at).toLocaleString();
+          successMessage.innerHTML = `
+            <strong>✅ Resource added successfully!</strong><br>
+            Resource ID: <code>${result.resource_id}</code><br>
+            Created: ${createdDate}
+          `;
+          successMessage.style.display = 'block';
+          
+          // Clear form (without confirmation dialog)
+          clearForm(false);
+          
+          // Add to recent resources
+          addToRecentResources(result.resource_id, data.title, data.file_type, result.created_at);
+        } else {
+          // Error
+          let errorText = result.error || 'Failed to submit resource';
+          if (result.existing_resource_id) {
+            errorText += `<br>Existing Resource ID: <code>${result.existing_resource_id}</code>`;
+          }
+          errorMessage.innerHTML = `<strong>❌ Error:</strong> ${errorText}`;
+          errorMessage.style.display = 'block';
+        }
+      } catch (error) {
+        errorMessage.innerHTML = `<strong>❌ Error:</strong> ${error.message || 'Failed to submit resource. Please check your connection.'}`;
+        errorMessage.style.display = 'block';
+      } finally {
+        loading.style.display = 'none';
+        submitBtn.disabled = false;
+      }
+    }
+
+    function clearForm(showConfirmation = true) {
+      // Show confirmation only if called from button click
+      if (showConfirmation && !confirm('Are you sure you want to clear the form? All entered data will be lost.')) {
+        return;
+      }
+      
+      document.getElementById('resourceForm').reset();
+      
+      // Reset all field states
+      ['title', 'description', 'topic', 'tags', 'downloadUrl', 'fileType'].forEach(fieldId => {
+        const group = document.getElementById(fieldId + 'Group');
+        group.classList.remove('error', 'success');
+        document.getElementById(fieldId + 'Error').style.display = 'none';
+      });
+
+      // Reset counters
+      updateCharCounter('title', 200);
+      updateCharCounter('description', 2000);
+      updateCharCounter('topic', 100);
+
+      // Hide messages
+      document.getElementById('successMessage').style.display = 'none';
+      document.getElementById('errorMessage').style.display = 'none';
+    }
+
+    function addToRecentResources(resourceId, title, fileType, createdAt) {
+      const recentSection = document.getElementById('recentResources');
+      const recentList = document.getElementById('recentResourcesList');
+      
+      recentSection.style.display = 'block';
+
+      const date = new Date(createdAt).toLocaleDateString();
+      const item = document.createElement('div');
+      item.className = 'resource-item';
+      item.innerHTML = `
+        <div>
+          <div class="title">${escapeHtml(title)}</div>
+          <div class="meta">${fileType.toUpperCase()} • ${date}</div>
+        </div>
+        <div class="id">${resourceId}</div>
+      `;
+
+      // Insert at top
+      recentList.insertBefore(item, recentList.firstChild);
+
+      // Limit to max items
+      while (recentList.children.length > MAX_RECENT_RESOURCES) {
+        recentList.removeChild(recentList.lastChild);
+      }
+    }
+
+    function escapeHtml(text) {
+      const div = document.createElement('div');
+      div.textContent = text;
+      return div.innerHTML;
+    }
+  </script>
+</body>
+</html>
+
