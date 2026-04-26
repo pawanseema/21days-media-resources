@@ -23,6 +23,16 @@ from config import load_openai_api_key, get_chroma_dir
 CHROMA_DIR = get_chroma_dir()
 COLLECTION_NAME = "sahajayoga_21_days_videos"
 
+# Vector retrieval: fetch this many neighbors per query embedding (original + enriched merged, capped below).
+INITIAL_VECTOR_CANDIDATES = 60
+
+# Section-level candidates sent to the reranker (not "videos"). Higher = better recall but more tokens/latency;
+# partial ID lists are repaired via _repair_llm_ranked_ids. 60 caused frequent truncation before repair existed.
+LLM_RERANK_POOL_MAX = 45
+
+# Set VIDEO_SEARCH_DEBUG=1 to log candidate counts from dual retrieval merge.
+VIDEO_SEARCH_DEBUG = os.environ.get("VIDEO_SEARCH_DEBUG", "").lower() in ("1", "true", "yes")
+
 # Ensure ChromaDB directory exists
 os.makedirs(CHROMA_DIR, exist_ok=True)
 
@@ -80,11 +90,137 @@ def embed_user_query(q):
 
 def chroma_vector_search(query: str, n_results=12):
     query_embedding = get_embedding(query)
+    # Note: Chroma query() include does not support "ids" in many versions; dedupe uses metadata keys.
     return collection.query(
         query_embeddings=[query_embedding],
         n_results=n_results,
-        include=["documents", "metadatas", "distances"]
+        include=["documents", "metadatas", "distances"],
     )
+
+
+def _dedupe_hit_key(chroma_id, meta: Dict) -> str:
+    """Stable key for merging two Chroma query result sets."""
+    if chroma_id is not None and str(chroma_id).strip() != "":
+        return str(chroma_id)
+    m = meta or {}
+    return f"{m.get('video_id', '')}|{m.get('timestamp', '')}|{m.get('section_title', '')}"
+
+
+def _rows_from_chroma_raw(raw: Dict) -> List[tuple]:
+    """(dedupe_key, distance, document, metadata) in Chroma relevance order."""
+    if not raw or not raw.get("documents") or not raw["documents"][0]:
+        return []
+    docs = raw["documents"][0]
+    metas = raw["metadatas"][0]
+    dists = raw["distances"][0]
+    id_rows = raw.get("ids")
+    id_list = id_rows[0] if id_rows and id_rows[0] else [None] * len(docs)
+    rows = []
+    for i in range(len(docs)):
+        cid = id_list[i] if i < len(id_list) else None
+        rows.append((_dedupe_hit_key(cid, metas[i]), dists[i], docs[i], metas[i]))
+    return rows
+
+
+def merge_chroma_enriched_first(raw_orig: Dict, raw_enr: Dict, max_merged: int) -> Dict:
+    """
+    Merge dual vector results: **enriched list first** (Chroma order), then original-only hits.
+    Avoids sorting the union by min(distance), which lets a broad user query flood the pool with
+    generic neighbors and bury enriched-specific matches. Same shape as collection.query().
+    """
+    enr_rows = _rows_from_chroma_raw(raw_enr)
+    orig_rows = _rows_from_chroma_raw(raw_orig)
+    seen: set = set()
+    acc: List[tuple] = []
+    for key, dist, doc, meta in enr_rows:
+        if len(acc) >= max_merged:
+            break
+        if key not in seen:
+            seen.add(key)
+            acc.append((dist, doc, meta))
+    for key, dist, doc, meta in orig_rows:
+        if len(acc) >= max_merged:
+            break
+        if key not in seen:
+            seen.add(key)
+            acc.append((dist, doc, meta))
+    if not acc:
+        return {"documents": [[]], "metadatas": [[]], "distances": [[]]}
+    docs, metas, dists = [], [], []
+    for dist, doc, meta in acc:
+        docs.append(doc)
+        metas.append(meta)
+        dists.append(dist)
+    return {"documents": [docs], "metadatas": [metas], "distances": [dists]}
+
+
+def _repair_llm_ranked_ids(ranked_ids: List, n_items: int, items: List[Dict]) -> List[int]:
+    """Turn a partial / messy ID list into a full permutation of 0..n_items-1 (missing tail by distance)."""
+    out: List[int] = []
+    seen: set = set()
+    for x in ranked_ids:
+        if isinstance(x, int) and 0 <= x < n_items and x not in seen:
+            seen.add(x)
+            out.append(x)
+    missing = [i for i in range(n_items) if i not in seen]
+    missing.sort(key=lambda i: items[i]["distance"])
+    return out + missing
+
+
+def _parse_ranked_ids_from_response(response_text: str):
+    """
+    Parse ranked ID array from LLM response text.
+    Supports raw JSON arrays and fenced/annotated outputs containing one array.
+    """
+    try:
+        parsed = json.loads(response_text)
+        if isinstance(parsed, list):
+            return parsed, "direct_json"
+    except (json.JSONDecodeError, TypeError):
+        pass
+
+    # Fallback: extract first bracketed integer list, even if wrapped in markdown fences.
+    m = re.search(r"\[[^\]]+\]", response_text, flags=re.MULTILINE | re.DOTALL)
+    if m:
+        try:
+            parsed = json.loads(m.group(0))
+            if isinstance(parsed, list):
+                return parsed, "extracted_array"
+        except (json.JSONDecodeError, TypeError, ValueError):
+            pass
+
+    # Last fallback: recover integers from free-form text/codeblock and let repair logic normalize.
+    ints = [int(x) for x in re.findall(r"\b\d+\b", response_text)]
+    if ints:
+        return ints, "extracted_integers"
+
+    raise ValueError("No valid ranked ID array found in reranker response")
+
+
+def dual_vector_retrieval(user_query: str, enriched: str):
+    """
+    Run vector search on original and (if meaningfully different) enriched query; merge and cap.
+    Returns (merged_chroma_dict, used_dual: bool).
+    """
+    n = INITIAL_VECTOR_CANDIDATES
+    raw_orig = chroma_vector_search(user_query, n_results=n)
+    use_dual = (
+        enriched.strip().lower() != user_query.strip().lower()
+        and len(enriched.strip()) >= 2
+    )
+    if use_dual:
+        raw_enr = chroma_vector_search(enriched, n_results=n)
+        merged = merge_chroma_enriched_first(raw_orig, raw_enr, max_merged=n)
+        if VIDEO_SEARCH_DEBUG:
+            no = len(raw_orig["documents"][0]) if raw_orig.get("documents") else 0
+            ne = len(raw_enr["documents"][0]) if raw_enr.get("documents") else 0
+            nm = len(merged["documents"][0]) if merged.get("documents") else 0
+            print(f"🔍 dual retrieval: original={no} enriched={ne} merged={nm} (cap={n})")
+        return merged, True
+    if VIDEO_SEARCH_DEBUG:
+        no = len(raw_orig["documents"][0]) if raw_orig.get("documents") else 0
+        print(f"🔍 single retrieval: candidates={no} (enrichment unchanged or empty)")
+    return raw_orig, False
 
 def keyword_score(query: str, text: str) -> float:
     q_words = set(re.findall(r"\w+", query.lower()))
@@ -118,8 +254,8 @@ def rerank_with_llm(original_query, chroma_results):
 
     # Check if OpenAI client is available
     if not openai_client:
-        print("⚠️ OpenAI client not initialized. Using original order.")
-        return sorted(items, key=lambda x: x["distance"])
+        print("⚠️ OpenAI client not initialized. Using merge order.")
+        return items
 
     try:
         # Extract published_at dates for date-based ranking
@@ -130,7 +266,13 @@ def rerank_with_llm(original_query, chroma_results):
                 **item,
                 "published_at": published_at
             })
-        
+
+        pool = min(LLM_RERANK_POOL_MAX, len(items_with_dates))
+        head = items_with_dates[:pool]
+        tail = items_with_dates[pool:]
+        if not head:
+            return []
+
         # Detect if query mentions a date
         date_patterns = [
             r'\b(Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Oct|Nov|Dec)[a-z]*\s+\d{1,2}(?:st|nd|rd|th)?\s+\d{4}',
@@ -141,15 +283,14 @@ def rerank_with_llm(original_query, chroma_results):
         ]
         has_date_mention = any(re.search(pattern, original_query, re.IGNORECASE) for pattern in date_patterns)
         
-        # Build prompt with semantic relevance as primary focus
-        # Simplify items structure for LLM - only include essential fields
+        # LLM sees only `head` (renumbered ids). Tail stays in merge order after reranked head.
         simplified_items = []
-        for item in items_with_dates:
+        for new_id, item in enumerate(head):
             simplified_items.append({
-                "id": item["id"],
-                "text": item["text"][:200] + "..." if len(item["text"]) > 200 else item["text"],  # Truncate long text
+                "id": new_id,
+                "text": item["text"][:200] + "..." if len(item["text"]) > 200 else item["text"],
                 "published_at": item.get("published_at", ""),
-                "video_title": item["meta"].get("video_title", "")[:100]  # Truncate long titles
+                "video_title": item["meta"].get("video_title", "")[:100],
             })
         
         if has_date_mention:
@@ -195,47 +336,36 @@ Return ONLY a valid JSON array of IDs, nothing else. The array must contain all 
 
         response = openai_client.chat.completions.create(
             model="gpt-4o-mini",
+            temperature=0,
             messages=[
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": user_prompt}
-            ]
+            ],
         )
         response_text = response.choices[0].message.content.strip()
         
-        # Extract JSON from markdown code blocks if present
-        json_match = re.search(r'\[[\d,\s]+\]', response_text)
-        if json_match:
-            response_text = json_match.group(0)
-        
-        # Try to parse JSON, fall back to original order if parsing fails
+        # Parse JSON (robust to fenced blocks / minor wrapper text)
         try:
-            ranked_ids = json.loads(response_text)
-            # Validate ranked_ids
-            if isinstance(ranked_ids, list):
-                if len(ranked_ids) == 0:
-                    print(f"Warning: LLM returned empty array. Using original order.")
-                    return sorted(items, key=lambda x: x["distance"])
-                if len(ranked_ids) == len(items):
-                    # Validate all IDs are valid indices
-                    if all(isinstance(id, int) and 0 <= id < len(items) for id in ranked_ids):
-                        # Check if all IDs are present exactly once
-                        if len(set(ranked_ids)) == len(ranked_ids):
-                            return [items[i] for i in ranked_ids]
-                        else:
-                            print(f"Warning: Duplicate IDs in LLM response. Using original order.")
-                    else:
-                        print(f"Warning: Invalid IDs in LLM response. Using original order.")
-                else:
-                    print(f"Warning: LLM returned {len(ranked_ids)} IDs but expected {len(items)}. Using original order.")
+            ranked_ids, parse_mode = _parse_ranked_ids_from_response(response_text)
+            if isinstance(ranked_ids, list) and len(ranked_ids) > 0:
+                repaired = _repair_llm_ranked_ids(ranked_ids, len(head), head)
+                if VIDEO_SEARCH_DEBUG:
+                    print(
+                        f"🔁 rerank parse={parse_mode} "
+                        f"raw_count={len(ranked_ids)} repaired_count={len(repaired)}"
+                    )
+                ordered_head = [head[i] for i in repaired]
+                tail_sorted = sorted(tail, key=lambda x: x["distance"])
+                return ordered_head + tail_sorted
+            print("Warning: LLM returned empty or non-list ranking. Using merge order.")
         except (json.JSONDecodeError, ValueError, IndexError) as e:
-            print(f"Warning: Failed to parse LLM reranking response: {e}. Using original order.")
-            print(f"Response was: {response_text[:200]}")  # Truncate long responses
-    
+            print(f"Warning: Failed to parse LLM reranking response: {e}. Using merge order.")
+            print(f"Response was: {response_text[:200]}")
+
     except Exception as e:
-        print(f"Warning: LLM reranking failed: {e}. Using original order.")
-    
-    # Fallback: return items in original order (sorted by distance)
-    return sorted(items, key=lambda x: x["distance"])
+        print(f"Warning: LLM reranking failed: {e}. Using merge order.")
+
+    return items
 
 def compute_confidence(distance, keyword_boost):
     base = max(0, 1 - distance)
@@ -245,8 +375,8 @@ def search_video_sections(user_query: str, top_k=3):
     # 1 | Enrich query
     enriched = enrich_user_query_llm(user_query)
 
-    # 2 | Vector search
-    raw = chroma_vector_search(enriched, n_results=12)
+    # 2 | Dual vector search (original + enriched), merge/dedupe, cap at INITIAL_VECTOR_CANDIDATES
+    raw, _ = dual_vector_retrieval(user_query, enriched)
 
     # 3 | Re-rank with LLM
     reranked = rerank_with_llm(user_query, raw)
@@ -300,8 +430,13 @@ def debug_trace(query):
     enriched = enrich_user_query_llm(query)
     print("\nEnriched Query:", enriched)
 
-    raw = chroma_vector_search(enriched)
-    print("\nRaw vector matches:", len(raw["documents"][0]))
+    raw_orig = chroma_vector_search(query, n_results=INITIAL_VECTOR_CANDIDATES)
+    raw_enr = chroma_vector_search(enriched, n_results=INITIAL_VECTOR_CANDIDATES)
+    raw = merge_chroma_enriched_first(raw_orig, raw_enr, max_merged=INITIAL_VECTOR_CANDIDATES)
+    print(
+        f"\nVector candidates: original={len(raw_orig['documents'][0])} "
+        f"enriched={len(raw_enr['documents'][0])} merged={len(raw['documents'][0])}"
+    )
 
     for i, d in enumerate(raw["documents"][0]):
         print(f"\n--------- Candidate {i} ---------")
@@ -351,7 +486,7 @@ def streaming_search(query, callback):
     enriched = enrich_user_query_llm(query)
 
     callback("Vector searching in Chroma…")
-    raw = chroma_vector_search(enriched, n_results=20)
+    raw, _ = dual_vector_retrieval(query, enriched)
 
     callback("Running LLM reranker…")
     reranked = rerank_with_llm(query, raw)
@@ -401,7 +536,7 @@ def recommend_related(section_embedding, top_k=5):
 
 def search(user_query: str, top_k=3, explanations=True):
     enriched = enrich_user_query_llm(user_query)
-    vector_hits = chroma_vector_search(enriched, n_results=20)
+    vector_hits, _ = dual_vector_retrieval(user_query, enriched)
     reranked = rerank_with_llm(user_query, vector_hits)
 
     final = []

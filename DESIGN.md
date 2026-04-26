@@ -33,8 +33,9 @@ This project is a **Sahaja Yoga–oriented discovery stack** that:
 - Livestream-aware eligibility (completed broadcasts only, with a post-end cooldown)
 - Video-level and per-timestamp embeddings and metadata
 - Resource (PDF/handout) ingestion with duplicate URL checks
-- Hybrid-style search: embeddings + keyword overlap on results + LLM rerank
+- Hybrid-style search: dual-query embeddings + keyword overlap on results + LLM rerank
 - CLI utilities to browse Chroma and delete all entries for a given `video_id`
+- On-demand single video re-ingest by `video_id` (API + CLI)
 
 ---
 
@@ -151,6 +152,14 @@ playpen/
 - `build_embedding_text` + OpenAI `text-embedding-3-large` → `collection.add`
 - IDs: `{video_id}_video`, `{video_id}_{i}_ts`
 
+**Single-video processing (`process_video_by_id`):**
+
+- Process one explicit YouTube `video_id`
+- Optional overwrite mode deletes existing Chroma rows for that `video_id` before re-adding
+- Used by both Flask API and CLI:
+  - API: `POST /api/videos/ingest`
+  - CLI: `python3 resources/video_processing.py --video-id <id> [--overwrite]`
+
 **Collection dimension:** On startup, may delete and recreate the collection if stored embeddings are incompatible with **3072** dimensions (legacy 384-dim collections).
 
 ---
@@ -174,8 +183,14 @@ playpen/
 **Pipeline (`search_video_sections`):**
 
 1. `enrich_user_query_llm` — OpenAI `gpt-4o-mini` (falls back to original query if no client)
-2. `chroma_vector_search(enriched, n_results=12)` — OpenAI `text-embedding-3-large` query embedding
-3. `rerank_with_llm(original_query, raw)` — OpenAI `gpt-4o-mini` returns JSON id order; falls back to distance order on failure
+2. `dual_vector_retrieval(user_query, enriched)`:
+   - vector query on original query (`INITIAL_VECTOR_CANDIDATES=60`)
+   - vector query on enriched query (`INITIAL_VECTOR_CANDIDATES=60`)
+   - merge with enriched-first dedupe (`merge_chroma_enriched_first`)
+3. `rerank_with_llm(original_query, raw)`:
+   - reranks a capped head (`LLM_RERANK_POOL_MAX=45`)
+   - repairs partial/messy ID lists via `_repair_llm_ranked_ids`
+   - appends tail in merge order strategy
 4. `keyword_score` + `compute_confidence(distance, keyword_boost)` on reranked list
 5. Return top `top_k` (default 3 from API)
 
@@ -224,6 +239,16 @@ TARGET_PLAYLIST_TITLES
   → append rows to OUTPUT_CSV
 ```
 
+Manual single video path:
+
+```
+video_id
+  → process_video_by_id(video_id, overwrite?)
+  → fetch snippet/description
+  → clean + enrich + parse timestamps
+  → embed + Chroma add
+```
+
 ### Ingestion (resource)
 
 ```
@@ -236,7 +261,8 @@ POST /api/resources/ingest (or UI form)
 ```
 POST /search { query, top_k? }
   → enrich (OpenAI)
-  → vector search (top 12)
+  → dual vector search (original + enriched, 60 each)
+  → enriched-first merge + dedupe (cap 60)
   → LLM rerank
   → confidence + top_k JSON
 ```
@@ -272,11 +298,10 @@ Handouts: `resource_id`, title, description, topic, tags (as string in metadata)
 
 ### Practical stages (video)
 
-1. **Semantic retrieval** — single embedding query, top-N neighbors in Chroma (fixed `n_results=12` in code today)
-2. **LLM rerank** — reorder candidates for query relevance (including date-aware rules when the model follows prompt)
+1. **Semantic retrieval** — dual embedding queries (original + enriched), up to 60 each
+2. **Merge & dedupe** — enriched-first merge to preserve enriched relevance while still adding original-only recall
+3. **LLM rerank** — rerank capped head (45), repair incomplete ID arrays if returned by model
 3. **Lexical boost** — `keyword_score` on original query vs document text; folded into `compute_confidence`
-
-**Note:** Paraphrased queries can miss relevant timestamps if they fall outside the top-N retrieved set; improving recall is a known improvement area (e.g. larger N or dual-query retrieval).
 
 ### `search()` / streaming variant
 
@@ -292,6 +317,7 @@ Uses **fused** scoring from `postprocess.py` (embedding + keyword + rank positio
 | GET | `/ui/<path>` | Static assets under `ui/` |
 | POST | `/search` | Video section search |
 | GET | `/health` | Health check |
+| POST | `/api/videos/ingest` | Ingest one video by `video_id` (optional overwrite) |
 | POST | `/api/resources/ingest` | Create resource |
 | POST | `/api/resources/search` | Search resources |
 | GET | `/api/resources/<id>` | Get resource |
@@ -362,7 +388,7 @@ Implemented with OpenAI chat models and structured prompts in `video_search.py` 
 ## Performance & Error Handling
 
 - **Ingestion:** Sequential per video; OpenAI embedding calls are network-bound; debug skip logs add console noise only
-- **Search:** Typically dominated by OpenAI round-trips (enrichment + rerank) plus one embedding call
+- **Search:** Typically dominated by OpenAI round-trips (enrichment + rerank) plus two embedding calls (original + enriched)
 - **Fallbacks:** Missing OpenAI client → skip enrichment / rerank where coded; Chroma errors surface to API as 500
 
 ---

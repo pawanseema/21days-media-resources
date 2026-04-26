@@ -47,6 +47,18 @@ cd /Users/pawan/playpen
 python3 resources/video_processing.py
 ```
 
+### Process one specific video by `video_id` (manual re-add flow)
+
+```bash
+cd /Users/pawan/playpen
+
+# Process exactly one video
+python3 resources/video_processing.py --video-id 1BTlbtXVMRg
+
+# Replace existing rows for that video_id
+python3 resources/video_processing.py --video-id 1BTlbtXVMRg --overwrite
+```
+
 On startup you should see processing order and per-playlist limit from `PROCESS_OLDEST_FIRST` and `MAX_RECENT_VIDEOS` in `resources/video_processing.py`.
 
 **Expected behavior:**
@@ -225,6 +237,20 @@ curl -X POST http://localhost:5005/search \
   -d '{"query": "meditation", "top_k": 3}'
 ```
 
+### Video ingest by `video_id` (new API)
+
+```bash
+# Add one video (fails with 409 if already present)
+curl -X POST http://localhost:5005/api/videos/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"video_id":"1BTlbtXVMRg"}'
+
+# Replace existing rows for that video_id
+curl -X POST http://localhost:5005/api/videos/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"video_id":"1BTlbtXVMRg","overwrite":true}'
+```
+
 ### Resource search
 
 ```bash
@@ -311,7 +337,7 @@ open http://localhost:5005/
 With OpenAI:
 
 - Query enrichment: ~0.5–2 s per call (network + model)
-- Embedding + Chroma query: usually sub-second to a few seconds total
+- Embeddings + Chroma query: usually sub-second to a few seconds total (video search uses dual vector queries)
 - LLM rerank: ~1–4 s typical  
 - **Total** per search often **~3–10 s** depending on latency
 
@@ -322,6 +348,7 @@ With OpenAI:
 - [ ] `pip3 install -r requirements.txt`
 - [ ] `api_key.txt` and `openai_api_key.txt` in project root
 - [ ] `python3 resources/video_processing.py` (if testing ingestion)
+- [ ] `python3 resources/video_processing.py --video-id <id> [--overwrite]` (if testing single video ingest)
 - [ ] `python3 resources/browse_videos.py stats` shows data
 - [ ] `python3 -c "from search.video_search import search_video_sections; ..."` returns results
 - [ ] `python3 api/flask_api_server.py` and `curl localhost:5005/health`

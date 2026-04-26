@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from search.video_search import search_video_sections
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
+from resources.video_processing import process_video_by_id
 
 app = Flask(__name__)
 
@@ -124,6 +125,48 @@ def api_ingest_resource():
     except Exception as e:
         # Log error in production (use proper logging)
         print(f"Error in resource ingestion endpoint: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e)
+        }), 500
+
+
+@app.route("/api/videos/ingest", methods=["POST"])
+def api_ingest_video():
+    """
+    Ingest a specific YouTube video into Chroma by video_id.
+
+    Expected JSON payload:
+    {
+        "video_id": "1BTlbtXVMRg",
+        "overwrite": false  # optional, default false
+    }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+
+        data = request.get_json()
+        if not data or "video_id" not in data:
+            return jsonify({"error": "Missing required field: 'video_id'"}), 400
+
+        video_id = str(data.get("video_id", "")).strip()
+        if not video_id:
+            return jsonify({"error": "video_id cannot be empty"}), 400
+
+        overwrite = bool(data.get("overwrite", False))
+        result = process_video_by_id(video_id=video_id, overwrite=overwrite)
+        return jsonify(result), 201
+
+    except ValueError as e:
+        msg = str(e)
+        if "already exists in Chroma" in msg:
+            return jsonify({"error": msg}), 409
+        return jsonify({"error": msg}), 400
+    except Exception as e:
+        print(f"Error in video ingestion endpoint: {e}", flush=True)
         import traceback
         traceback.print_exc()
         return jsonify({

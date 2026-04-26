@@ -14,6 +14,7 @@ if sys.version_info < (3, 10):
             importlib.metadata.packages_distributions = _packages_distributions
 
 import os, re, csv
+import argparse
 from datetime import datetime, timezone, timedelta
 from collections import defaultdict
 from googleapiclient.discovery import build
@@ -41,7 +42,7 @@ TARGET_PLAYLIST_TITLES = [
     "21 Days Meditation Course - January 2026"
 ]
 
-MAX_RECENT_VIDEOS = 35  # Only process N videos per playlist per run
+MAX_RECENT_VIDEOS = 42  # Only process N videos per playlist per run
 PROCESS_OLDEST_FIRST =  True # False=newest first, True=oldest first
 OUTPUT_CSV = "sahajyoga_recent5_audit.csv"
 CHROMA_DIR = get_chroma_dir()
@@ -448,6 +449,116 @@ def parse_timestamps(description):
             })
     return timestamps
 
+
+def process_video_by_id(video_id: str, overwrite: bool = False):
+    """
+    Process and ingest a single YouTube video into Chroma.
+
+    Args:
+        video_id: YouTube video ID
+        overwrite: If True, delete existing rows for this video_id before adding.
+
+    Returns:
+        Dict summary with counts and metadata.
+    """
+    if not video_id or not video_id.strip():
+        raise ValueError("video_id is required")
+    video_id = video_id.strip()
+
+    existing = collection.get(where={"video_id": video_id})
+    existing_ids = existing.get("ids", []) if existing else []
+    existing_count = len(existing_ids)
+    deleted_existing = 0
+
+    if existing_count > 0:
+        if not overwrite:
+            raise ValueError(
+                f"Video {video_id} already exists in Chroma ({existing_count} rows). "
+                "Delete first or set overwrite=True."
+            )
+        collection.delete(ids=existing_ids)
+        deleted_existing = existing_count
+
+    video_res = youtube.videos().list(part="snippet", id=video_id).execute()
+    items = video_res.get("items", [])
+    if not items:
+        raise ValueError(f"Video not found on YouTube for id: {video_id}")
+
+    vid_data = items[0]
+    snippet = vid_data.get("snippet", {})
+    video_title = snippet.get("title", f"Video {video_id}")
+    original_desc = snippet.get("description", "")
+    actual_published_at = snippet.get("publishedAt", "")
+    url = f"https://www.youtube.com/watch?v={video_id}"
+
+    desc = clean_description(original_desc)
+    enrichment = extract_video_level_enrichment(desc)
+    timestamps = parse_timestamps(desc)
+
+    rows = []
+    video_row = {
+        "video_id": video_id,
+        "video_title": video_title,
+        "playlist_id": "manual_api",
+        "type": "video_context",
+        "chakra": enrichment["chakra_focus"],
+        "quote": enrichment["founder_quote"],
+        "hashtags": ", ".join(enrichment["hashtags"]),
+        "timestamp": "",
+        "section_title": "Video Summary",
+        "section_summary": enrichment["video_summary"],
+        "video_url": url,
+        "published_at": actual_published_at,
+    }
+    video_row["embedding_text"] = build_embedding_text(video_row)
+    video_row["embedding"] = get_embedding(video_row["embedding_text"])
+    rows.append(video_row)
+
+    video_meta = {k: v for k, v in video_row.items() if k not in ["embedding", "embedding_text"]}
+    collection.add(
+        documents=[video_row["embedding_text"]],
+        embeddings=[video_row["embedding"]],
+        metadatas=[video_meta],
+        ids=[f"{video_id}_video"],
+    )
+
+    for i, ts in enumerate(timestamps):
+        ts_row = {
+            "video_id": video_id,
+            "video_title": video_title,
+            "playlist_id": "manual_api",
+            "type": "timestamp_section",
+            "chakra": enrichment["chakra_focus"],
+            "quote": enrichment["founder_quote"],
+            "hashtags": ", ".join(enrichment["hashtags"]),
+            "timestamp": ts["timestamp"],
+            "section_title": ts["section_title"],
+            "section_summary": ts["section_summary"],
+            "video_url": url,
+            "published_at": actual_published_at,
+        }
+        ts_row["embedding_text"] = build_embedding_text(ts_row)
+        ts_row["embedding"] = get_embedding(ts_row["embedding_text"])
+        rows.append(ts_row)
+
+        ts_meta = {k: v for k, v in ts_row.items() if k not in ["embedding", "embedding_text"]}
+        collection.add(
+            documents=[ts_row["embedding_text"]],
+            embeddings=[ts_row["embedding"]],
+            metadatas=[ts_meta],
+            ids=[f"{video_id}_{i}_ts"],
+        )
+
+    return {
+        "video_id": video_id,
+        "video_title": video_title,
+        "published_at": actual_published_at,
+        "rows_added": len(rows),
+        "timestamp_sections_added": len(timestamps),
+        "deleted_existing_rows": deleted_existing,
+        "url": url,
+    }
+
 # -----------------------------
 # MAIN INGESTION
 # -----------------------------
@@ -559,15 +670,38 @@ def write_csv(rows, filename):
 # RUN PIPELINE
 # -----------------------------
 if __name__ == "__main__":
-    order_label = "oldest first" if PROCESS_OLDEST_FIRST else "newest first"
-    print(f"⚙️  Processing order: {order_label}, limit per playlist: {MAX_RECENT_VIDEOS}")
-    all_rows = []
-    for title in TARGET_PLAYLIST_TITLES:
-        print(f"🎥 Processing playlist: {title}")
-        rows = process_playlist(title)
-        if rows:
-            all_rows.extend(rows)
+    parser = argparse.ArgumentParser(
+        description="Process Sahaja Yoga videos into Chroma (playlist mode or single-video mode)."
+    )
+    parser.add_argument(
+        "--video-id",
+        help="Process exactly one YouTube video_id (manual mode).",
+    )
+    parser.add_argument(
+        "--overwrite",
+        action="store_true",
+        help="When used with --video-id, delete existing rows for that video_id before re-adding.",
+    )
+    args = parser.parse_args()
 
-    write_csv(all_rows, OUTPUT_CSV)
-    # Uncomment to embed into Chroma after audit
-    # embed_to_chroma(all_rows)
+    if args.video_id:
+        result = process_video_by_id(video_id=args.video_id, overwrite=args.overwrite)
+        print(
+            f"✅ Processed video {result['video_id']} ({result['video_title']}) | "
+            f"rows_added={result['rows_added']} "
+            f"timestamps={result['timestamp_sections_added']} "
+            f"deleted_existing={result['deleted_existing_rows']}"
+        )
+    else:
+        order_label = "oldest first" if PROCESS_OLDEST_FIRST else "newest first"
+        print(f"⚙️  Processing order: {order_label}, limit per playlist: {MAX_RECENT_VIDEOS}")
+        all_rows = []
+        for title in TARGET_PLAYLIST_TITLES:
+            print(f"🎥 Processing playlist: {title}")
+            rows = process_playlist(title)
+            if rows:
+                all_rows.extend(rows)
+
+        write_csv(all_rows, OUTPUT_CSV)
+        # Uncomment to embed into Chroma after audit
+        # embed_to_chroma(all_rows)
