@@ -1,6 +1,8 @@
 # Testing Guide
 
-This guide matches the current codebase and [DESIGN.md](./DESIGN.md). Paths assume project root `/Users/pawan/playpen` (adjust as needed).
+This guide matches the current codebase and [DESIGN.md](./DESIGN.md). Project root: `/Users/pawansaxena/playpen/21days-media-resources`.
+
+For a fast sanity check, run `./quick_test.sh` from the project root.
 
 ---
 
@@ -9,7 +11,7 @@ This guide matches the current codebase and [DESIGN.md](./DESIGN.md). Paths assu
 ### 1. Install dependencies
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 
 # Use pip3 if `pip` is not on your PATH (common on macOS)
 pip3 install -r requirements.txt
@@ -43,14 +45,14 @@ YouTube key setup: [Google Cloud Console](https://console.cloud.google.com/) →
 ### Run the pipeline
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 python3 resources/video_processing.py
 ```
 
 ### Process one specific video by `video_id` (manual re-add flow)
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 
 # Process exactly one video
 python3 resources/video_processing.py --video-id 1BTlbtXVMRg
@@ -84,7 +86,7 @@ head -5 sahajyoga_recent5_audit.csv
 CLI: `resources/browse_videos.py` (from project root).
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 
 # Statistics
 python3 resources/browse_videos.py stats
@@ -170,7 +172,7 @@ Or use the UI: `http://localhost:5005/resource-form`
 ### Basic video search
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 python3 -c "
 from search.video_search import search_video_sections
 q = 'meditation techniques'
@@ -217,7 +219,7 @@ debug_trace("meditation")
 ### Start server
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 python3 api/flask_api_server.py
 ```
 
@@ -294,7 +296,7 @@ Static assets (e.g. images under `ui/`) are served at `/ui/<filename>`.
 ## Step 7: End-to-end checklist
 
 ```bash
-cd /Users/pawan/playpen
+cd /Users/pawansaxena/playpen/21days-media-resources
 
 # Optional: clear video collection (destructive)
 # python3 resources/browse_videos.py clear --yes
@@ -345,6 +347,7 @@ With OpenAI:
 
 ## Quick test checklist
 
+- [ ] `./quick_test.sh` passes from project root
 - [ ] `pip3 install -r requirements.txt`
 - [ ] `api_key.txt` and `openai_api_key.txt` in project root
 - [ ] `python3 resources/video_processing.py` (if testing ingestion)

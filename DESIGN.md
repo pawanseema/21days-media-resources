@@ -42,7 +42,7 @@ This project is a **Sahaja Yoga–oriented discovery stack** that:
 ## Repository Layout
 
 ```
-playpen/
+21days-media-resources/
 ├── api/
 │   └── flask_api_server.py    # HTTP API + static UI routes
 ├── resources/
