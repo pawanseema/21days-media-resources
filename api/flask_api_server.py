@@ -16,6 +16,36 @@ app = Flask(__name__)
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UI_DIR = os.path.join(PROJECT_ROOT, 'ui')
 
+ADMIN_PROTECTED_ROUTES = {
+    ("POST", "/api/resources/ingest"),
+    ("POST", "/api/videos/ingest"),
+}
+
+
+def _route_requires_admin_auth():
+    """Return True for mutating admin-only HTTP routes."""
+    if (request.method, request.path) in ADMIN_PROTECTED_ROUTES:
+        return True
+    if request.method == "PUT" and request.path.startswith("/api/resources/"):
+        return True
+    return False
+
+
+@app.before_request
+def require_admin_key():
+    """
+    When ADMIN_API_KEY is set, require X-Admin-Key on mutating routes.
+    Unset locally so dev workflows (Flask on 5005, HTML forms) stay unchanged.
+    """
+    admin_key = os.environ.get("ADMIN_API_KEY", "").strip()
+    if not admin_key or not _route_requires_admin_auth():
+        return None
+
+    provided = request.headers.get("X-Admin-Key", "").strip()
+    if provided != admin_key:
+        return jsonify({"error": "Unauthorized"}), 401
+    return None
+
 @app.route("/search", methods=["POST"])
 def api_search():
     """

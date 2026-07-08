@@ -28,7 +28,7 @@ _project_root = os.path.dirname(_script_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from config import load_yt_api_key, load_openai_api_key, get_chroma_dir
+from config import load_yt_api_key, load_openai_api_key, get_chroma_dir, get_audit_csv_path
 
 # -----------------------------
 # CONFIGURATION
@@ -44,7 +44,7 @@ TARGET_PLAYLIST_TITLES = [
 
 MAX_RECENT_VIDEOS = 42  # Only process N videos per playlist per run
 PROCESS_OLDEST_FIRST =  True # False=newest first, True=oldest first
-OUTPUT_CSV = "sahajyoga_recent5_audit.csv"
+OUTPUT_CSV = get_audit_csv_path()
 CHROMA_DIR = get_chroma_dir()
 
 # Ensure persist directory exists

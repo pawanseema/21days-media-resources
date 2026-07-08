@@ -19,14 +19,14 @@ _project_root = os.path.dirname(_script_dir)
 if _project_root not in sys.path:
     sys.path.insert(0, _project_root)
 
-from config import get_chroma_dir, load_openai_api_key
+from config import get_chroma_dir, get_audit_csv_path, load_openai_api_key
 
 # -----------------------------
 # CONFIGURATION (matches video_processing.py)
 # -----------------------------
 CHROMA_DIR = get_chroma_dir()
 COLLECTION_NAME = "sahajayoga_21_days_videos"
-AUDIT_CSV_PATH = os.path.join(_project_root, "sahajyoga_recent5_audit.csv")
+AUDIT_CSV_PATH = get_audit_csv_path()
 
 # Ensure persist directory exists
 os.makedirs(CHROMA_DIR, exist_ok=True)

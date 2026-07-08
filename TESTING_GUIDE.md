@@ -348,7 +348,7 @@ With OpenAI:
 ## Quick test checklist
 
 - [ ] `./quick_test.sh` passes from project root
-- [ ] `pip3 install -r requirements.txt`
+- [ ] `pip3 install -r requirements.txt` (includes `gunicorn`)
 - [ ] `api_key.txt` and `openai_api_key.txt` in project root
 - [ ] `python3 resources/video_processing.py` (if testing ingestion)
 - [ ] `python3 resources/video_processing.py --video-id <id> [--overwrite]` (if testing single video ingest)
@@ -366,6 +366,93 @@ With OpenAI:
 - `"Shri Mataji"` — quotes / mentions
 - Section titles from descriptions — often strong matches when phrasing is close
 - `"how to meditate"` — paraphrase (recall may vary; see DESIGN.md)
+
+---
+
+## Local production server (Gunicorn, no Docker)
+
+Same codebase as Cloud Run; useful to verify Gunicorn before building an image:
+
+```bash
+cd /Users/pawansaxena/playpen/21days-media-resources
+pip3 install -r requirements.txt
+
+# Default bind: 0.0.0.0:8080 (see gunicorn.conf.py)
+gunicorn -c gunicorn.conf.py api.flask_api_server:app
+
+# Or match local Flask port:
+PORT=5005 gunicorn -c gunicorn.conf.py api.flask_api_server:app
+```
+
+Test admin-protected routes (only enforced when `ADMIN_API_KEY` is set):
+
+```bash
+export ADMIN_API_KEY="your-test-admin-key"
+PORT=5005 gunicorn -c gunicorn.conf.py api.flask_api_server:app
+
+# Should return 401 without header
+curl -X POST http://localhost:5005/api/videos/ingest \
+  -H "Content-Type: application/json" \
+  -d '{"video_id":"TEST"}'
+
+# Should succeed with header (use a real video_id for 201)
+curl -X POST http://localhost:5005/api/videos/ingest \
+  -H "Content-Type: application/json" \
+  -H "X-Admin-Key: your-test-admin-key" \
+  -d '{"video_id":"1BTlbtXVMRg"}'
+```
+
+Without `ADMIN_API_KEY`, mutating routes behave as before (open for local dev).
+
+---
+
+## Local Docker test (container parity)
+
+Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/). Builds the same image used for Cloud Run.
+
+```bash
+cd /Users/pawansaxena/playpen/21days-media-resources
+
+docker build -t 21days-media-api:local .
+
+docker run --rm -p 8080:8080 \
+  -e CHROMA_PERSIST_DIR=/data \
+  -v "$(pwd)/resources/chroma_free_store:/data" \
+  -e OPENAI_API_KEY="$(cat openai_api_key.txt)" \
+  -e YOUTUBE_API_KEY="$(cat api_key.txt)" \
+  21days-media-api:local
+```
+
+Smoke test:
+
+```bash
+curl http://localhost:8080/health
+
+curl -X POST http://localhost:8080/search \
+  -H "Content-Type: application/json" \
+  -d '{"query": "meditation", "top_k": 2}'
+
+open http://localhost:8080/
+```
+
+With admin auth in the container:
+
+```bash
+docker run --rm -p 8080:8080 \
+  -e CHROMA_PERSIST_DIR=/data \
+  -e ADMIN_API_KEY="your-test-admin-key" \
+  -v "$(pwd)/resources/chroma_free_store:/data" \
+  -e OPENAI_API_KEY="$(cat openai_api_key.txt)" \
+  -e YOUTUBE_API_KEY="$(cat api_key.txt)" \
+  21days-media-api:local
+```
+
+Override Chroma path locally without Docker:
+
+```bash
+export CHROMA_PERSIST_DIR="/path/to/chroma_free_store"
+python3 api/flask_api_server.py
+```
 
 ---
 
