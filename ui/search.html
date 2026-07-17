@@ -151,6 +151,49 @@
       gap: 10px;
     }
 
+    .example-prompts {
+      margin-top: 14px;
+    }
+
+    .example-prompts-label {
+      font-size: 13px;
+      color: #5a6a7a;
+      margin-bottom: 8px;
+      font-weight: 500;
+    }
+
+    .example-prompt-chips {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+
+    .example-prompt-chip {
+      padding: 8px 14px;
+      font-size: 13px;
+      line-height: 1.3;
+      border: 1px solid #d5dde5;
+      border-radius: 999px;
+      background: #f4f7fa;
+      color: #133b5b;
+      cursor: pointer;
+      font-weight: 500;
+      transition: background 0.2s, border-color 0.2s, transform 0.15s;
+      text-align: left;
+      max-width: 100%;
+    }
+
+    .example-prompt-chip:hover {
+      background: #e8f1f8;
+      border-color: #133b5b;
+      transform: translateY(-1px);
+    }
+
+    .example-prompt-chip:focus {
+      outline: 2px solid #133b5b;
+      outline-offset: 2px;
+    }
+
     #query {
       flex: 1;
       padding: 15px 20px;
@@ -583,12 +626,19 @@
       }
 
       .context-buttons {
-        flex-direction: column;
+        flex-direction: row;
+        flex-wrap: wrap;
       }
 
       .context-btn {
-        width: 100%;
+        flex: 1 1 auto;
+        min-width: 140px;
         justify-content: center;
+      }
+
+      .example-prompt-chip {
+        font-size: 12px;
+        padding: 7px 12px;
       }
     }
   </style>
@@ -598,7 +648,7 @@
     <div class="header">
       <div class="header-text">
         <h1>Let's Meditate  For 21 Days</h1>
-        <p>Search videos, find resources, or request a mentor</p>
+        <p>Search videos and handouts from the meditation course</p>
       </div>
     </div>
     <div class="top-hero">
@@ -616,10 +666,14 @@
               <input 
                 type="text" 
                 id="query" 
-                placeholder="Search Videos for meditation topics, chakras, techniques..." 
+                placeholder="Ask your question…" 
                 autocomplete="off"
               />
               <button id="searchBtn" onclick="performSearch()">Search</button>
+            </div>
+            <div class="example-prompts" id="examplePrompts" aria-label="Example searches">
+              <div class="example-prompts-label">Try an example</div>
+              <div class="example-prompt-chips" id="examplePromptChips"></div>
             </div>
           </div>
           <div class="context-buttons">
@@ -628,9 +682,6 @@
             </button>
             <button class="context-btn" id="btnHandouts" onclick="switchContext('resources')">
               📚 Search Handouts
-            </button>
-            <button class="context-btn" id="btnMentor" onclick="openMentorForm()">
-              👤 I want a Mentor
             </button>
           </div>
         </div>
@@ -665,17 +716,55 @@
   <script>
     // Context state management
     let searchMode = 'videos'; // 'videos' or 'resources'
-    const MENTOR_FORM_URL = 'https://tinyurl.com/RequestAMentorWC';
-    
+
     // API URLs
     const VIDEO_API_URL = '/search';
     const RESOURCE_API_URL = '/api/resources/search';
 
     // Placeholders for different contexts
     const PLACEHOLDERS = {
-      videos: 'Search Videos for meditation topics, chakras, techniques...',
-      resources: 'Search for handouts, resources, topics...'
+      videos: 'Ask your question…',
+      resources: 'Ask your question…'
     };
+
+    // ChatGPT-style starter prompts: click fills the box and searches right away
+    const EXAMPLE_PROMPTS = {
+      videos: [
+        'How do I start meditating?',
+        'Heart chakra meditation',
+        'Experience the silence within',
+        'What is Kundalini awakening?',
+        'Clearing thoughts during meditation'
+      ],
+      resources: [
+        'Beginner meditation handout',
+        'Chakra overview',
+        'Daily meditation practice guide',
+        'Affirmations for meditation',
+        'How to raise Kundalini'
+      ]
+    };
+
+    function renderExamplePrompts(mode) {
+      const chips = document.getElementById('examplePromptChips');
+      if (!chips) return;
+      chips.innerHTML = '';
+      const prompts = EXAMPLE_PROMPTS[mode] || [];
+      prompts.forEach((text) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.className = 'example-prompt-chip';
+        btn.textContent = text;
+        btn.addEventListener('click', () => applyExamplePrompt(text));
+        chips.appendChild(btn);
+      });
+    }
+
+    function applyExamplePrompt(text) {
+      const queryInput = document.getElementById('query');
+      queryInput.value = text;
+      performSearch();
+    }
 
     // Allow Enter key to trigger search
     document.getElementById('query').addEventListener('keypress', function(e) {
@@ -697,6 +786,7 @@
       const queryInput = document.getElementById('query');
       queryInput.value = '';
       queryInput.placeholder = PLACEHOLDERS[mode];
+      renderExamplePrompts(mode);
       
       // Clear results
       document.getElementById('results').innerHTML = '';
@@ -712,9 +802,7 @@
       }
     }
 
-    function openMentorForm() {
-      window.open(MENTOR_FORM_URL, '_blank');
-    }
+    renderExamplePrompts(searchMode);
 
     async function performSearch() {
       const query = document.getElementById('query').value.trim();
@@ -901,19 +989,37 @@
       return 0;
     }
 
+    function isMobileDevice() {
+      return /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent) ||
+        (navigator.maxTouchPoints > 1 && /Macintosh/i.test(navigator.userAgent));
+    }
+
     function openVideoModal(result) {
+      const videoId = extractVideoId(result.url);
+      const timestampSeconds = convertTimestampToSeconds(result.timestamp);
+
+      // Mobile browsers block unmuted YouTube iframe autoplay. Opening the
+      // watch URL keeps the user gesture and starts playback in YouTube's
+      // native/mobile player at the section timestamp.
+      if (isMobileDevice()) {
+        const watchUrl = `https://www.youtube.com/watch?v=${videoId}&t=${timestampSeconds}s`;
+        window.open(watchUrl, '_blank', 'noopener,noreferrer');
+        return;
+      }
+
       const modal = document.getElementById('videoModal');
       const modalTitle = document.getElementById('modalTitle');
       const videoContainer = document.getElementById('videoContainer');
 
-      const videoId = extractVideoId(result.url);
-      const timestampSeconds = convertTimestampToSeconds(result.timestamp);
-      
-      // Create YouTube embed URL with timestamp
-      const embedUrl = `https://www.youtube.com/embed/${videoId}?start=${timestampSeconds}&autoplay=1`;
+      const embedUrl =
+        `https://www.youtube.com/embed/${videoId}` +
+        `?start=${timestampSeconds}&autoplay=1&playsinline=1&rel=0`;
 
       modalTitle.textContent = `${result.video_title} - ${result.section_title}`;
-      videoContainer.innerHTML = `<iframe src="${embedUrl}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+      videoContainer.innerHTML =
+        `<iframe src="${embedUrl}" frameborder="0" ` +
+        `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ` +
+        `allowfullscreen playsinline></iframe>`;
 
       modal.style.display = 'block';
       document.body.style.overflow = 'hidden'; // Prevent background scrolling
