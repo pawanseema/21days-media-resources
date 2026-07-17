@@ -3,6 +3,9 @@ openai_api_key.txt
 *.pyc
 __pycache__/
 .env
+.venv/
+scripts/gcp/config.env
+admin-keys-output
 chroma_free_store/
 *.csv
 

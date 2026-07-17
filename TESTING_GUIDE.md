@@ -413,14 +413,14 @@ Requires [Docker Desktop](https://www.docker.com/products/docker-desktop/). Buil
 ```bash
 cd /Users/pawansaxena/playpen/21days-media-resources
 
-docker build -t 21days-media-api:local .
+docker build -t na21days-media-api:local .
 
 docker run --rm -p 8080:8080 \
   -e CHROMA_PERSIST_DIR=/data \
   -v "$(pwd)/resources/chroma_free_store:/data" \
   -e OPENAI_API_KEY="$(cat openai_api_key.txt)" \
   -e YOUTUBE_API_KEY="$(cat api_key.txt)" \
-  21days-media-api:local
+  na21days-media-api:local
 ```
 
 Smoke test:
@@ -444,7 +444,7 @@ docker run --rm -p 8080:8080 \
   -v "$(pwd)/resources/chroma_free_store:/data" \
   -e OPENAI_API_KEY="$(cat openai_api_key.txt)" \
   -e YOUTUBE_API_KEY="$(cat api_key.txt)" \
-  21days-media-api:local
+  na21days-media-api:local
 ```
 
 Override Chroma path locally without Docker:

@@ -15,7 +15,7 @@ This document is a **review-first plan** for packaging the Flask app for Cloud R
 | **Local sanity check** | `./quick_test.sh` from project root |
 | **Related docs** | [DESIGN.md](../DESIGN.md), [TESTING_GUIDE.md](../TESTING_GUIDE.md) |
 
-**Cloud naming (suggested):** service `21days-media-api`, Artifact Registry repo `21days-media`, GCS bucket `21days-media-chroma` (adjust to your GCP project ID).
+**Cloud naming (suggested):** service `na21days-media-api`, Artifact Registry repo `na21days-media`, GCS bucket `na21days-media-chroma-days-search-app` (Artifact Registry names cannot start with a digit).
 
 ## Goals
 
@@ -55,7 +55,7 @@ We support **two first-class ways** to run the same application; you pick which 
 3. **Deploy flow** — push image to **Artifact Registry** → `gcloud run deploy` (new **revision**) → Cloud Run shifts traffic to the new revision by default; keep the previous revision available for instant rollback.
 4. **Rollback** — revert traffic to the **previous revision** in Cloud Run (Console or `gcloud run services update-traffic`) if a regression appears; no need to rebuild immediately.
 5. **Data safety** — risky schema or Chroma layout changes: **backup the GCS bucket** (or export) before migrations; document one-off migration steps in the release notes when needed.
-6. **Optional staging** — a second Cloud Run service (e.g. `21days-media-api-staging`) with its own bucket or bucket prefix and secrets, for smoke tests against production-like data **without** pointing real users at it until you promote the same image to prod.
+6. **Optional staging** — a second Cloud Run service (e.g. `na21days-media-api-staging`) with its own bucket or bucket prefix and secrets, for smoke tests against production-like data **without** pointing real users at it until you promote the same image to prod.
 
 **Bugfix vs feature:** same pipeline; smaller images and faster deploys help; consider **CHANGELOG.md** or GitHub Releases for auditability.
 
@@ -117,7 +117,7 @@ Document chosen limits in **`TESTING_GUIDE.md`** / runbook after implementation.
 **Important Cloud Run constraint:** IAM “authenticated invokers only” applies **per service** (or per separate service), not per URL path. So “public search + private mutators” on **one** Cloud Run service requires one of:
 
 1. **Application-level protection (recommended for a single service)** — e.g. Flask `before_request` or decorators: require a shared secret header (`X-Admin-Key`), signed JWT, or Firebase Auth **only** on `POST/PUT` mutating routes; leave `GET` UI and `POST` search open.  
-2. **Two services** — e.g. `21days-media-web` (public: static + `/search` + `/api/resources/search`) and `21days-media-admin` (private IAM + ingest/update/video-ingest), sharing the same Chroma bucket mount (or admin writes rarely via CLI only).  
+2. **Two services** — e.g. `na21days-media-web` (public: static + `/search` + `/api/resources/search`) and `na21days-media-admin` (private IAM + ingest/update/video-ingest), sharing the same Chroma bucket mount (or admin writes rarely via CLI only).  
 3. **Identity-Aware Proxy (IAP)** in front of the whole service, then path-based or audience rules (more moving parts).
 
 **Plan default for implementation:** single service + **(1)** unless you prefer splitting services.
@@ -195,7 +195,7 @@ Upload the existing local store to GCS so Cloud Run starts with indexed data:
 cd /Users/pawansaxena/playpen/21days-media-resources
 
 export PROJECT_ID="your-gcp-project"
-export BUCKET="21days-media-chroma"
+export BUCKET="na21days-media-chroma-days-search-app"
 
 # Create bucket once (pick region to match Cloud Run, e.g. us-central1)
 gcloud storage buckets create "gs://${BUCKET}" --project="${PROJECT_ID}" --location=us-central1
@@ -217,11 +217,11 @@ cd /Users/pawansaxena/playpen/21days-media-resources
 
 export PROJECT_ID="your-gcp-project"
 export REGION="us-central1"
-export SERVICE="21days-media-api"
-export REPO="21days-media"
+export SERVICE="na21days-media-api"
+export REPO="na21days-media"
 export TAG="v1"   # tie to git commit or semver
 export IMAGE="${REGION}-docker.pkg.dev/${PROJECT_ID}/${REPO}/${SERVICE}:${TAG}"
-export BUCKET="21days-media-chroma"
+export BUCKET="na21days-media-chroma-days-search-app"
 
 # Build and push (from repo root; requires Dockerfile — not yet in repo)
 gcloud builds submit --tag "${IMAGE}" --project="${PROJECT_ID}"
@@ -323,13 +323,13 @@ python3 api/flask_api_server.py   # http://127.0.0.1:5005
 export PROJECT_ID="your-gcp-project"
 export REGION="us-central1"
 
-gcloud artifacts repositories create 21days-media \
+gcloud artifacts repositories create na21days-media \
   --repository-format=docker \
   --location="${REGION}" \
   --project="${PROJECT_ID}"
 ```
 
-- Image path pattern: `${REGION}-docker.pkg.dev/${PROJECT_ID}/21days-media/21days-media-api:TAG`
+- Image path pattern: `${REGION}-docker.pkg.dev/${PROJECT_ID}/na21days-media/na21days-media-api:TAG`
 
 ### Domain (optional)
 
@@ -355,24 +355,33 @@ gcloud artifacts repositories create 21days-media \
 
 ## Implementation checklist (after plan approval)
 
+**Automated scripts** live in [`scripts/gcp/`](../scripts/gcp/README.md):
+
+| Script | Purpose |
+|--------|---------|
+| `bootstrap.sh` | Phase 2 infra (idempotent) + optional Chroma upload |
+| `upload-chroma.sh` | Sync local Chroma → GCS after ingestion |
+| `deploy.sh` | Build image + deploy Cloud Run revision |
+| `verify.sh` | Check infra; `--smoke` hits `/health` |
+
+```bash
+cp scripts/gcp/config.env.example scripts/gcp/config.env
+./scripts/gcp/bootstrap.sh
+./scripts/gcp/verify.sh
+./scripts/gcp/deploy.sh
+```
+
+Manual checklist (if not using scripts):
+
 Run from `/Users/pawansaxena/playpen/21days-media-resources`:
 
-1. Add **`Dockerfile`** + **`gunicorn.conf.py`** + **`.dockerignore`** at project root.
-2. Update **`config.py`** to **`os.getenv`** (`OPENAI_API_KEY`, `YOUTUBE_API_KEY`, `CHROMA_PERSIST_DIR`) with file fallback for local dev.
-3. Ensure all modules use **`get_chroma_dir()`** only (already true for `video_processing.py`, `resource_ingestion.py`, `browse_*.py`, `search/*.py`).
-4. Add **admin auth** on mutating HTTP routes (`X-Admin-Key` or chosen mechanism).
-5. **Test container locally** before GCP:
-   ```bash
-   docker build -t 21days-media-api:local .
-   docker run --rm -p 8080:8080 \
-     -e CHROMA_PERSIST_DIR=/data \
-     -v "$(pwd)/resources/chroma_free_store:/data" \
-     -e OPENAI_API_KEY="$(cat openai_api_key.txt)" \
-     21days-media-api:local
-   curl http://localhost:8080/health
-   ```
-6. **GCP:** enable APIs, create bucket, upload Chroma, Secret Manager secrets, deploy with volume + secrets.
-7. **Smoke test prod:** `GET /health`, `POST /search`, admin ingest with header; compare with `./quick_test.sh` locally.
+1. Add **`Dockerfile`** + **`gunicorn.conf.py`** + **`.dockerignore`** at project root. ✅
+2. Update **`config.py`** to **`os.getenv`** (`OPENAI_API_KEY`, `YOUTUBE_API_KEY`, `CHROMA_PERSIST_DIR`) with file fallback for local dev. ✅
+3. Ensure all modules use **`get_chroma_dir()`** only (already true for `video_processing.py`, `resource_ingestion.py`, `browse_*.py`, `search/*.py`). ✅
+4. Add **admin auth** on mutating HTTP routes (`X-Admin-Key` or chosen mechanism). ✅
+5. **Test container locally** before GCP (see `TESTING_GUIDE.md`). 
+6. **GCP:** `./scripts/gcp/bootstrap.sh` (or manual bucket/secrets steps).
+7. **Smoke test prod:** `./scripts/gcp/deploy.sh` then `./scripts/gcp/verify.sh --smoke`.
 8. Update **`TESTING_GUIDE.md`** with Cloud Run URLs and deploy runbook notes.
 
 ---
@@ -383,6 +392,6 @@ Run from `/Users/pawansaxena/playpen/21days-media-resources`:
 - **v0.2** — Access model: public UI + public search JSON for future clients; mutating APIs private; playlist ingestion remains CLI-first (`video_processing.py`).
 - **v0.3** — Clarified: future **mobile app = read-only search only**; **video/resource management never** exposed to mobile or anonymous callers (admin CLI + protected mutators only).
 - **v0.4** — Added: **local vs production** deployment modes (explicit choice); **production upgrade/rollback** strategy; **cost and abuse protection** (budgets, `max-instances`, rate limits, optional Cloud Armor).
-- **v0.5** — Aligned with **this environment**: project root `/Users/pawansaxena/playpen/21days-media-resources`, GitHub remote, `21days-media-*` GCP naming, local verify via `./quick_test.sh`, Chroma seed upload from `resources/chroma_free_store/`, expanded deploy/build checklist.
+- **v0.5** — Aligned with **this environment**: project root `/Users/pawansaxena/playpen/21days-media-resources`, GitHub remote, `na21days-media-*` GCP naming (Artifact Registry names cannot start with a digit), local verify via `./quick_test.sh`, Chroma seed upload from `resources/chroma_free_store/`, expanded deploy/build checklist.
 
 When you approve or mark changes, we will bump this section and implement accordingly.
