@@ -977,8 +977,12 @@
           <div class="download-hint">Click to download →</div>
         </div>
         <div class="resource-card-footer">
-          <span class="file-type-badge">${escapeHtml(result.file_type || 'file').toUpperCase()}</span>
-          <span class="confidence-badge">${(result.confidence * 100).toFixed(0)}% match</span>
+          ${uiConfig.showResultDebug
+            ? `<span class="file-type-badge">${escapeHtml(result.file_type || 'file').toUpperCase()}</span>`
+            : ''}
+          ${uiConfig.showResultDebug && result.confidence != null
+            ? `<span class="confidence-badge">${(result.confidence * 100).toFixed(0)}% match</span>`
+            : ''}
         </div>
       `;
 

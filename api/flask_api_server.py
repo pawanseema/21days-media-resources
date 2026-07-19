@@ -59,8 +59,9 @@ def api_ui_config():
     """
     Public UI flags for the frontend.
 
-    SHOW_RESULT_DEBUG: when true, video cards show timestamp, confidence, hashtags.
-    Default true when unset (local dev); Cloud Run deploy sets SHOW_RESULT_DEBUG=false.
+    SHOW_RESULT_DEBUG: when true, video cards show timestamp, confidence, hashtags;
+    resource cards show file type and confidence. Default true when unset (local
+    dev); Cloud Run deploy sets SHOW_RESULT_DEBUG=false.
     """
     return jsonify({
         "showResultDebug": _env_flag("SHOW_RESULT_DEBUG", default=True),
