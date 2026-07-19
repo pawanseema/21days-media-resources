@@ -401,7 +401,8 @@ def search_video_sections(user_query: str, top_k=3):
             "confidence": confidence,
         })
 
-    # 5 | Top K only
+    # 5 | Highest confidence first, then top K
+    out.sort(key=lambda x: x.get("confidence") or 0, reverse=True)
     return out[:top_k]
 
 class ConversationMemory:

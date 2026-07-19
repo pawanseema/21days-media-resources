@@ -681,7 +681,7 @@
               🔍 Videos
             </button>
             <button class="context-btn" id="btnHandouts" onclick="switchContext('resources')">
-              📚 Search Handouts
+              📚 Handouts
             </button>
           </div>
         </div>
@@ -716,10 +716,27 @@
   <script>
     // Context state management
     let searchMode = 'videos'; // 'videos' or 'resources'
+    // Debug fields on video cards (timestamp, confidence, hashtags).
+    // Default true until /api/ui-config loads; Cloud Run sets SHOW_RESULT_DEBUG=false.
+    let uiConfig = { showResultDebug: true };
 
     // API URLs
     const VIDEO_API_URL = '/search';
     const RESOURCE_API_URL = '/api/resources/search';
+    const UI_CONFIG_URL = '/api/ui-config';
+
+    async function loadUiConfig() {
+      try {
+        const response = await fetch(UI_CONFIG_URL);
+        if (!response.ok) return;
+        const data = await response.json();
+        if (typeof data.showResultDebug === 'boolean') {
+          uiConfig.showResultDebug = data.showResultDebug;
+        }
+      } catch (err) {
+        console.warn('Could not load UI config; using defaults', err);
+      }
+    }
 
     // Placeholders for different contexts
     const PLACEHOLDERS = {
@@ -734,7 +751,8 @@
         'Heart chakra meditation',
         'Experience the silence within',
         'What is Kundalini awakening?',
-        'Clearing thoughts during meditation'
+        'Clearing thoughts during meditation',
+        'Piano music for meditation by Sia'
       ],
       resources: [
         'Beginner meditation handout',
@@ -803,6 +821,7 @@
     }
 
     renderExamplePrompts(searchMode);
+    loadUiConfig();
 
     async function performSearch() {
       const query = document.getElementById('query').value.trim();
@@ -864,7 +883,11 @@
       const resultsContainer = document.getElementById('results');
       resultsContainer.innerHTML = '';
 
-      results.forEach((result, index) => {
+      const ordered = [...results].sort(
+        (a, b) => (b.confidence || 0) - (a.confidence || 0)
+      );
+
+      ordered.forEach((result, index) => {
         const card = mode === 'videos' 
           ? createVideoCard(result, index)
           : createResourceCard(result);
@@ -893,14 +916,20 @@
         <div class="card-content">
           <div class="video-title">${escapeHtml(result.video_title)}</div>
           <div class="section-title">${escapeHtml(result.section_title)}</div>
-          <div class="timestamp">⏱️ ${result.timestamp || 'N/A'}</div>
+          ${uiConfig.showResultDebug
+            ? `<div class="timestamp">⏱️ ${result.timestamp || 'N/A'}</div>`
+            : ''}
           <div class="summary">${escapeHtml(result.summary || 'No summary available')}</div>
           <div class="metadata">
             ${result.chakra ? `<span class="chakra-badge">${escapeHtml(result.chakra)}</span>` : ''}
-            ${result.confidence ? `<span class="confidence-badge">Confidence: ${(result.confidence * 100).toFixed(1)}%</span>` : ''}
+            ${uiConfig.showResultDebug && result.confidence
+              ? `<span class="confidence-badge">Confidence: ${(result.confidence * 100).toFixed(1)}%</span>`
+              : ''}
           </div>
           ${result.quote ? `<div class="quote">"${escapeHtml(result.quote)}"</div>` : ''}
-          ${result.hashtags ? `<div class="hashtags">${escapeHtml(result.hashtags)}</div>` : ''}
+          ${uiConfig.showResultDebug && result.hashtags
+            ? `<div class="hashtags">${escapeHtml(result.hashtags)}</div>`
+            : ''}
         </div>
       `;
 

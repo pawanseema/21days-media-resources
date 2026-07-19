@@ -46,6 +46,26 @@ def require_admin_key():
         return jsonify({"error": "Unauthorized"}), 401
     return None
 
+def _env_flag(name, default=False):
+    """Parse a boolean-ish environment variable."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+@app.route("/api/ui-config", methods=["GET"])
+def api_ui_config():
+    """
+    Public UI flags for the frontend.
+
+    SHOW_RESULT_DEBUG: when true, video cards show timestamp, confidence, hashtags.
+    Default true when unset (local dev); Cloud Run deploy sets SHOW_RESULT_DEBUG=false.
+    """
+    return jsonify({
+        "showResultDebug": _env_flag("SHOW_RESULT_DEBUG", default=True),
+    }), 200
+
 @app.route("/search", methods=["POST"])
 def api_search():
     """
