@@ -44,6 +44,25 @@
       margin: 0 calc(50% - 50vw) 10px;
       padding: 6px 20px 5px;
       text-align: center;
+      position: relative;
+    }
+
+    .header-course-link {
+      position: absolute;
+      top: 50%;
+      right: 20px;
+      transform: translateY(-50%);
+      color: #133b5b;
+      font-size: 0.9em;
+      font-weight: 600;
+      text-decoration: none;
+      white-space: nowrap;
+      opacity: 0.9;
+    }
+
+    .header-course-link:hover {
+      opacity: 1;
+      text-decoration: underline;
     }
 
     /* Full artwork visible: PNG already includes circular portrait + curved name text */
@@ -615,6 +634,17 @@
         font-size: 1.85em;
       }
 
+      .header {
+        padding: 28px 16px 8px;
+      }
+
+      .header-course-link {
+        top: 8px;
+        right: 12px;
+        transform: none;
+        font-size: 0.78em;
+      }
+
       .search-form {
         width: 100%;
         padding: 16px;
@@ -646,6 +676,12 @@
 <body>
   <div class="container">
     <div class="header">
+      <a
+        class="header-course-link"
+        href="https://us.sahajayoga.org/21days/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >About 21-Day Course</a>
       <div class="header-text">
         <h1>Let's Meditate  For 21 Days</h1>
         <p>Search Meditation videos and find handouts</p>
