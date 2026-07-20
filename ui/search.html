@@ -666,7 +666,7 @@
               <input 
                 type="text" 
                 id="query" 
-                placeholder="Ask your question…" 
+                placeholder="Type your query to search meditation videos…" 
                 autocomplete="off"
               />
               <button id="searchBtn" onclick="performSearch()">Search</button>
@@ -822,6 +822,7 @@
     }
 
     renderExamplePrompts(searchMode);
+    document.getElementById('query').placeholder = PLACEHOLDERS[searchMode];
     loadUiConfig();
 
     async function performSearch() {
