@@ -43,7 +43,7 @@ chmod +x scripts/gcp/*.sh
 | `bootstrap.sh` | **Once per GCP project/env**, or after adding new infra. Creates APIs, Artifact Registry, GCS bucket, runtime SA, IAM, secrets, uploads Chroma. |
 | `upload-chroma.sh` | After **local ingestion** changes (new videos indexed locally). |
 | `deploy.sh` | Every **release** (app/code change). Builds image + deploys Cloud Run revision. |
-| `verify.sh` | After bootstrap or deploy; `--smoke` curls `/health`. |
+| `verify.sh` | After bootstrap or deploy; `--smoke` curls `/health`, `/api/ui-config`, and `/api/videos/related`. |
 
 ## Long-term workflow
 

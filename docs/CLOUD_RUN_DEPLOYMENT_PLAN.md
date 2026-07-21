@@ -362,7 +362,7 @@ gcloud artifacts repositories create na21days-media \
 | `bootstrap.sh` | Phase 2 infra (idempotent) + optional Chroma upload |
 | `upload-chroma.sh` | Sync local Chroma → GCS after ingestion |
 | `deploy.sh` | Build image + deploy Cloud Run revision |
-| `verify.sh` | Check infra; `--smoke` hits `/health` |
+| `verify.sh` | Check infra; `--smoke` hits `/health`, `/api/ui-config`, `/api/videos/related` |
 
 ```bash
 cp scripts/gcp/config.env.example scripts/gcp/config.env
