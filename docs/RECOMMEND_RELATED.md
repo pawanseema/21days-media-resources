@@ -63,7 +63,7 @@ Closing the modal after opening a card counts as engagement. We do **not** requi
 
 | Name | Type | Default | Meaning |
 |------|------|---------|---------|
-| `ENABLE_MORE_LIKE_THIS` | env bool | **`false`** | When false: no UI button, related API returns **404** (or 403) with a clear disabled message |
+| `ENABLE_MORE_LIKE_THIS` | env bool | **`true`** | When false: no UI button, related API returns **404** (or 403) with a clear disabled message |
 
 Parse like existing `SHOW_RESULT_DEBUG` (`1` / `true` / `yes` / `on`).
 
@@ -74,7 +74,7 @@ Extend **`GET /api/ui-config`**:
 ```json
 {
   "showResultDebug": true,
-  "enableMoreLikeThis": false
+  "enableMoreLikeThis": true
 }
 ```
 
@@ -88,18 +88,18 @@ UI reads this on load. If `enableMoreLikeThis` is false:
 
 | Environment | Suggested flag |
 |-------------|----------------|
-| Local default | `false` or unset → false (opt-in for local testing) |
-| Local testing related | `ENABLE_MORE_LIKE_THIS=true` |
-| Cloud Run (production users) | `false` until rollout |
-| Cloud Run (dogfood / staging) | `true` on a staging service or temporary prod toggle |
+| Local default | unset → **true** (opt out with `ENABLE_MORE_LIKE_THIS=false`) |
+| Local disable related | `ENABLE_MORE_LIKE_THIS=false` |
+| Cloud Run (production) | **`true`** (set in `deploy.sh`) |
 
-`deploy.sh` / `config.env.example` should document:
+`deploy.sh` / `config.env.example` document:
 
 ```bash
-# ENABLE_MORE_LIKE_THIS=false   # default in deploy
+# ENABLE_MORE_LIKE_THIS=true   # default in deploy
+# ENABLE_MORE_LIKE_THIS=false  # to disable
 ```
 
-To dogfood in prod without a second service: temporarily set `ENABLE_MORE_LIKE_THIS=true` on Cloud Run env, re-deploy or update env, test, set back to `false`. Prefer a **staging** Cloud Run service when practical.
+To turn off in prod without a code change: set `ENABLE_MORE_LIKE_THIS=false` on Cloud Run env (or redeploy with that value).
 
 ### 3.4 Compatibility guarantee
 
@@ -274,23 +274,24 @@ Respect existing `showResultDebug` for timestamp / confidence / hashtags on rela
 
 1. Enable on staging or temporary prod env  
 2. Validate quality of neighbors, latency, OpenAI cost  
-3. Set `ENABLE_MORE_LIKE_THIS=true` in default `deploy.sh` when approved  
+3. Set `ENABLE_MORE_LIKE_THIS=true` in default `deploy.sh` when approved ✅  
 4. Update TESTING_GUIDE.md  
 
 ---
 
 ## 8. Testing checklist
 
-**Flag off (default):**
+**Flag off:**
 
 - [ ] `/api/ui-config` → `enableMoreLikeThis: false`  
 - [ ] No “More like this” after watching  
 - [ ] `POST /api/videos/related` → 404 (disabled)  
 - [ ] Search + modal unchanged  
 
-**Flag on (local):**
+**Flag on (default / local):**
 
 ```bash
+# default is on; or force:
 ENABLE_MORE_LIKE_THIS=true python api/flask_api_server.py
 ```
 
@@ -299,11 +300,13 @@ ENABLE_MORE_LIKE_THIS=true python api/flask_api_server.py
 - [ ] Back restores original search  
 - [ ] Mobile: modal + manual play  
 
-**Deploy dogfood:**
+**Deploy:**
+
+`deploy.sh` sets `ENABLE_MORE_LIKE_THIS=true`. To disable:
 
 ```bash
-# In Cloud Run env (or deploy.sh override for staging):
-ENABLE_MORE_LIKE_THIS=true
+gcloud run services update na21days-media-api \
+  --update-env-vars=ENABLE_MORE_LIKE_THIS=false
 ```
 
 ---
@@ -316,7 +319,7 @@ ENABLE_MORE_LIKE_THIS=true
 | List behavior | **Replace** results + **Back** |
 | Same video | **Exclude** same `video_id` |
 | Rerank | **No** LLM rerank |
-| Feature default | **Off** until rollout |
+| Feature default | **On** (set `ENABLE_MORE_LIKE_THIS=false` to disable) |
 | Mobile play | In-modal, **no** required autoplay |
 
 ---
@@ -326,5 +329,6 @@ ENABLE_MORE_LIKE_THIS=true
 - **v0.1** — Initial design: UX flow, segment-embedding retrieval, `ENABLE_MORE_LIKE_THIS` feature switch, API/UI/rollout plan.
 - **v0.2** — Phase A implemented: flag in `/api/ui-config`, hardened `recommend_related`, `POST /api/videos/related`, smoke script.
 - **v0.3** — Phase B implemented: UI behind flag (More like this after modal close, related list + Back, mobile in-modal when flag on).
+- **v0.4** — Rollout: default `ENABLE_MORE_LIKE_THIS=true` in app + `deploy.sh`.
 
 When implementing, bump this section and link PRs/commits here.

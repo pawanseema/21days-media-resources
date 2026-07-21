@@ -828,8 +828,8 @@
     let searchMode = 'videos'; // 'videos' or 'resources'
     // Debug fields on video cards (timestamp, confidence, hashtags).
     // Default true until /api/ui-config loads; Cloud Run sets SHOW_RESULT_DEBUG=false.
-    // enableMoreLikeThis defaults false until config loads / Cloud Run enables it.
-    let uiConfig = { showResultDebug: true, enableMoreLikeThis: false };
+    // enableMoreLikeThis defaults true until /api/ui-config loads (matches server default).
+    let uiConfig = { showResultDebug: true, enableMoreLikeThis: true };
 
     // More like this state (Phase B)
     let currentVideoResults = [];

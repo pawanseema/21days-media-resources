@@ -64,11 +64,11 @@ def api_ui_config():
     dev); Cloud Run deploy sets SHOW_RESULT_DEBUG=false.
 
     ENABLE_MORE_LIKE_THIS: when true, UI may show More like this and related API
-    is enabled. Default false until rollout.
+    is enabled. Default true (rollout on); set false to disable.
     """
     return jsonify({
         "showResultDebug": _env_flag("SHOW_RESULT_DEBUG", default=True),
-        "enableMoreLikeThis": _env_flag("ENABLE_MORE_LIKE_THIS", default=False),
+        "enableMoreLikeThis": _env_flag("ENABLE_MORE_LIKE_THIS", default=True),
     }), 200
 
 
@@ -80,7 +80,7 @@ def api_videos_related():
     Disabled unless ENABLE_MORE_LIKE_THIS is true.
     Body: { "video_id", "timestamp", "top_k"? } or { "id": "<chroma_id>", "top_k"? }
     """
-    if not _env_flag("ENABLE_MORE_LIKE_THIS", default=False):
+    if not _env_flag("ENABLE_MORE_LIKE_THIS", default=True):
         return jsonify({
             "error": "More like this is disabled",
             "enableMoreLikeThis": False,
