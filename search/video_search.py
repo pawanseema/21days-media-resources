@@ -419,6 +419,48 @@ def _card_from_meta(meta: Dict, document: str, distance: float, chroma_id: str =
     return card
 
 
+def _segment_focus_text(meta: Dict) -> str:
+    """
+    Build a lean query string for More like this: section title + summary only.
+
+    Omits video title, date, chakra, quote, and hashtags so neighbors match
+    segment meaning rather than shared video/course chrome.
+    """
+    meta = meta or {}
+    title = str(meta.get("section_title") or "").strip()
+    summary = str(meta.get("section_summary") or "").strip()
+    parts = []
+    if title:
+        parts.append(f"Section: {title}")
+    if summary:
+        parts.append(f"Summary: {summary}")
+    return "\n".join(parts)
+
+
+def _related_query_embedding(seed: Dict) -> list:
+    """
+    Embedding used to find related segments.
+
+    Prefer a fresh OpenAI embedding of title+summary (query-time). Fall back to
+    the stored Chroma embedding if focus text is empty or embed fails.
+    Does not change stored vectors or /search behavior.
+    """
+    stored = seed.get("embedding")
+    focus = _segment_focus_text(seed.get("meta") or {})
+    if not focus:
+        return stored
+
+    try:
+        return get_embedding(focus)
+    except Exception as e:
+        print(
+            f"Warning: segment-focus embed failed ({e}); "
+            "falling back to stored section embedding",
+            flush=True,
+        )
+        return stored
+
+
 def resolve_seed_section(video_id: str = None, timestamp: str = None, chroma_id: str = None) -> Dict:
     """
     Load a timestamp_section seed from Chroma by id or (video_id, timestamp).
@@ -509,8 +551,12 @@ def recommend_related(
     """
     Find topic-similar timestamp sections near a seed segment.
 
-    Preferred: pass video_id+timestamp or chroma_id (loads stored embedding).
-    Legacy: pass section_embedding directly.
+    Preferred: pass video_id+timestamp or chroma_id. When a seed is resolved,
+    the neighbor query uses a **query-time** embedding of section_title +
+    section_summary (not the stored full embedding_text), so related stays
+    segment-focused. /search is unchanged.
+
+    Legacy: pass section_embedding directly (used as-is, no re-embed).
 
     Returns {"seed": {...}, "results": [card, ...]} when resolved via id/timestamp,
     or a bare list of cards when only section_embedding is provided (legacy).
@@ -525,7 +571,7 @@ def recommend_related(
             timestamp=timestamp,
             chroma_id=chroma_id,
         )
-        embedding = seed["embedding"]
+        embedding = _related_query_embedding(seed)
 
     if embedding is None:
         raise ValueError("section_embedding or seed identity is required")

@@ -116,22 +116,21 @@ With the flag **off**:
 ### 4.1 Core idea
 
 **Do not re-run the user’s text query.**  
-Use the **seed timestamp section’s embedding** and query Chroma for nearest neighbors.
+Resolve the seed segment, then find nearest **timestamp_section** neighbors.
 
-Existing helper (to be extended):
+**v1.1 (current):** query-time embedding of **section title + summary only** (one OpenAI Embeddings call per More like this). Stored Chroma vectors are unchanged; `/search` is unchanged.
 
-```python
-recommend_related(section_embedding, top_k=5)
-```
+**Later (optional):** parallel segment-focused collection at ingest to avoid the per-click embed.
 
 ### 4.2 Pipeline
 
 ```
 Seed identity (video_id + timestamp, and/or chroma id)
   → Load seed from Chroma (must be type timestamp_section when possible)
-  → Obtain seed embedding
-       Prefer: stored embedding from Chroma get/query include embeddings
-       Fallback: rebuild embedding_text from metadata + OpenAI embed once
+  → Build focus text: section_title + section_summary
+       (omit video title, date, chakra, quote, hashtags)
+  → OpenAI embed focus text (query-time)
+       Fallback: stored section embedding if focus empty or embed fails
   → Vector query nearest neighbors (n_results >> top_k to allow filtering)
   → Filters:
        - drop seed itself
@@ -154,10 +153,10 @@ Seed identity (video_id + timestamp, and/or chroma id)
 | Step | Cost |
 |------|------|
 | Chroma get + neighbor query | Low |
-| Re-embed seed (fallback only) | 1 embedding call |
+| Query-time embed of title+summary | **1 embedding call** per More like this |
 | Query enrichment + LLM rerank | **Not in v1** |
 
-Much cheaper than full `/search`.
+Much cheaper than full `/search` (no enrich / LLM rerank).
 
 ### 4.5 Empty / weak results
 
@@ -330,5 +329,6 @@ gcloud run services update na21days-media-api \
 - **v0.2** — Phase A implemented: flag in `/api/ui-config`, hardened `recommend_related`, `POST /api/videos/related`, smoke script.
 - **v0.3** — Phase B implemented: UI behind flag (More like this after modal close, related list + Back, mobile in-modal when flag on).
 - **v0.4** — Rollout: default `ENABLE_MORE_LIKE_THIS=true` in app + `deploy.sh`.
+- **v0.5** — Related retrieval: query-time embed of section title+summary (segment-focused; `/search` unchanged).
 
 When implementing, bump this section and link PRs/commits here.
