@@ -459,3 +459,5 @@ python3 api/flask_api_server.py
 ## Related docs
 
 - [DESIGN.md](./DESIGN.md) — architecture, storage, API list, ingestion gates
+- [docs/RECOMMEND_RELATED.md](./docs/RECOMMEND_RELATED.md) — “More like this” feature design (feature-flagged)
+- [docs/CLOUD_RUN_DEPLOYMENT_PLAN.md](./docs/CLOUD_RUN_DEPLOYMENT_PLAN.md) — Cloud Run packaging and deploy

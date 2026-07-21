@@ -400,6 +400,7 @@ Implemented with OpenAI chat models and structured prompts in `video_search.py` 
 - HTTP DELETE for video-by-id (CLI already exists)
 - Caching for repeated queries
 - Stricter secret handling and env-based config
+- **“More like this” related segments** — see [docs/RECOMMEND_RELATED.md](./docs/RECOMMEND_RELATED.md) (feature-flagged design)
 
 ---
 
