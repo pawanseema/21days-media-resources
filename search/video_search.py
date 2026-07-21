@@ -371,6 +371,224 @@ def compute_confidence(distance, keyword_boost):
     base = max(0, 1 - distance)
     return round(base + (0.15 * keyword_boost), 3)
 
+def _normalize_timestamp(ts: str) -> str:
+    """Normalize timestamp strings for comparison (e.g. 4:04 vs 04:04)."""
+    if ts is None:
+        return ""
+    text = str(ts).strip()
+    if not text:
+        return ""
+    parts = text.split(":")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return text
+    if len(nums) == 2:
+        return f"{nums[0]}:{nums[1]:02d}"
+    if len(nums) == 3:
+        return f"{nums[0]}:{nums[1]:02d}:{nums[2]:02d}"
+    return text
+
+
+def _embedding_as_list(embedding):
+    if embedding is None:
+        return None
+    if hasattr(embedding, "tolist"):
+        return embedding.tolist()
+    return list(embedding)
+
+
+def _card_from_meta(meta: Dict, document: str, distance: float, chroma_id: str = None) -> Dict:
+    """Build a search-card-shaped result from Chroma metadata."""
+    confidence = compute_confidence(distance, 0.0)
+    card = {
+        "video_title": meta.get("video_title", ""),
+        "timestamp": meta.get("timestamp", ""),
+        "section_title": meta.get("section_title", ""),
+        "summary": meta.get("section_summary", ""),
+        "url": meta.get("video_url", ""),
+        "chakra": meta.get("chakra", ""),
+        "quote": meta.get("quote", ""),
+        "hashtags": meta.get("hashtags", ""),
+        "published_at": meta.get("published_at", ""),
+        "video_id": meta.get("video_id", ""),
+        "confidence": confidence,
+    }
+    if chroma_id:
+        card["chroma_id"] = chroma_id
+    return card
+
+
+def resolve_seed_section(video_id: str = None, timestamp: str = None, chroma_id: str = None) -> Dict:
+    """
+    Load a timestamp_section seed from Chroma by id or (video_id, timestamp).
+
+    Returns dict with: chroma_id, meta, document, embedding (list).
+    Raises ValueError if not found or invalid args.
+    """
+    if chroma_id and str(chroma_id).strip():
+        got = collection.get(
+            ids=[str(chroma_id).strip()],
+            include=["metadatas", "documents", "embeddings"],
+        )
+        if not got or not got.get("ids"):
+            raise ValueError(f"Seed section not found for id: {chroma_id}")
+        meta = got["metadatas"][0] or {}
+        document = (got["documents"][0] if got.get("documents") else "") or ""
+        embedding = _embedding_as_list(got["embeddings"][0] if got.get("embeddings") is not None else None)
+        if embedding is None and document:
+            embedding = get_embedding(document)
+        if embedding is None:
+            raise ValueError(f"Seed section has no embedding: {chroma_id}")
+        return {
+            "chroma_id": got["ids"][0],
+            "meta": meta,
+            "document": document,
+            "embedding": embedding,
+        }
+
+    vid = (video_id or "").strip()
+    ts = (timestamp or "").strip()
+    if not vid or not ts:
+        raise ValueError("Provide chroma id, or both video_id and timestamp")
+
+    got = collection.get(
+        where={
+            "$and": [
+                {"video_id": vid},
+                {"type": "timestamp_section"},
+            ]
+        },
+        include=["metadatas", "documents", "embeddings"],
+    )
+    if not got or not got.get("ids"):
+        raise ValueError(f"Seed section not found for video_id={vid} timestamp={ts}")
+
+    target = _normalize_timestamp(ts)
+    match_idx = None
+    for i, meta in enumerate(got["metadatas"]):
+        meta = meta or {}
+        if _normalize_timestamp(meta.get("timestamp", "")) == target:
+            match_idx = i
+            break
+        # Also accept exact string match
+        if str(meta.get("timestamp", "")).strip() == ts:
+            match_idx = i
+            break
+
+    if match_idx is None:
+        raise ValueError(f"Seed section not found for video_id={vid} timestamp={ts}")
+
+    meta = got["metadatas"][match_idx] or {}
+    document = (got["documents"][match_idx] if got.get("documents") else "") or ""
+    embedding = _embedding_as_list(
+        got["embeddings"][match_idx] if got.get("embeddings") is not None else None
+    )
+    if embedding is None and document:
+        embedding = get_embedding(document)
+    if embedding is None:
+        raise ValueError(f"Seed section has no embedding for video_id={vid} timestamp={ts}")
+
+    return {
+        "chroma_id": got["ids"][match_idx],
+        "meta": meta,
+        "document": document,
+        "embedding": embedding,
+    }
+
+
+def recommend_related(
+    section_embedding=None,
+    top_k=5,
+    *,
+    video_id: str = None,
+    timestamp: str = None,
+    chroma_id: str = None,
+    exclude_same_video: bool = True,
+):
+    """
+    Find topic-similar timestamp sections near a seed segment.
+
+    Preferred: pass video_id+timestamp or chroma_id (loads stored embedding).
+    Legacy: pass section_embedding directly.
+
+    Returns {"seed": {...}, "results": [card, ...]} when resolved via id/timestamp,
+    or a bare list of cards when only section_embedding is provided (legacy).
+    """
+    top_k = max(1, int(top_k or 5))
+    seed = None
+    embedding = section_embedding
+
+    if chroma_id or (video_id and timestamp):
+        seed = resolve_seed_section(
+            video_id=video_id,
+            timestamp=timestamp,
+            chroma_id=chroma_id,
+        )
+        embedding = seed["embedding"]
+
+    if embedding is None:
+        raise ValueError("section_embedding or seed identity is required")
+
+    embedding = _embedding_as_list(embedding)
+    seed_video_id = (seed["meta"].get("video_id") if seed else video_id) or ""
+    seed_chroma_id = seed["chroma_id"] if seed else None
+
+    # Fetch extra neighbors so filters still leave top_k
+    n_fetch = min(max(top_k * 8 + 10, 25), 80)
+    raw = collection.query(
+        query_embeddings=[embedding],
+        n_results=n_fetch,
+        include=["documents", "metadatas", "distances"],
+    )
+
+    results = []
+    if not raw or not raw.get("ids") or not raw["ids"][0]:
+        payload = {"seed": None, "results": []}
+        if seed:
+            payload["seed"] = {
+                "video_id": seed["meta"].get("video_id", ""),
+                "timestamp": seed["meta"].get("timestamp", ""),
+                "section_title": seed["meta"].get("section_title", ""),
+                "video_title": seed["meta"].get("video_title", ""),
+                "chroma_id": seed["chroma_id"],
+            }
+        return payload if seed else []
+
+    for i, rid in enumerate(raw["ids"][0]):
+        meta = (raw["metadatas"][0][i] if raw.get("metadatas") else {}) or {}
+        doc = (raw["documents"][0][i] if raw.get("documents") else "") or ""
+        dist = float(raw["distances"][0][i]) if raw.get("distances") else 1.0
+
+        if seed_chroma_id and rid == seed_chroma_id:
+            continue
+        if meta.get("type") and meta.get("type") != "timestamp_section":
+            continue
+        if exclude_same_video and seed_video_id and meta.get("video_id") == seed_video_id:
+            continue
+
+        results.append(_card_from_meta(meta, doc, dist, chroma_id=rid))
+        if len(results) >= top_k:
+            break
+
+    results.sort(key=lambda x: x.get("confidence") or 0, reverse=True)
+
+    if seed is None and section_embedding is not None:
+        # Legacy callers expected a list
+        return results[:top_k]
+
+    return {
+        "seed": {
+            "video_id": seed["meta"].get("video_id", ""),
+            "timestamp": seed["meta"].get("timestamp", ""),
+            "section_title": seed["meta"].get("section_title", ""),
+            "video_title": seed["meta"].get("video_title", ""),
+            "chroma_id": seed["chroma_id"],
+        },
+        "results": results[:top_k],
+    }
+
+
 def search_video_sections(user_query: str, top_k=3):
     # 1 | Enrich query
     enriched = enrich_user_query_llm(user_query)
@@ -398,6 +616,7 @@ def search_video_sections(user_query: str, top_k=3):
             "quote": meta["quote"],
             "hashtags": meta["hashtags"],
             "published_at": meta.get("published_at", ""),
+            "video_id": meta.get("video_id", ""),
             "confidence": confidence,
         })
 
@@ -517,23 +736,6 @@ def streaming_search(query, callback):
 
     callback("Done.")
     return final
-
-def recommend_related(section_embedding, top_k=5):
-    results = collection.query(
-        query_embeddings=[section_embedding],
-        n_results=top_k+1,
-        include=["documents","metadatas","distances"]
-    )
-    # skip the first one (same section)
-    return [
-        {
-            "section_title": results["metadatas"][0][i]["section_title"],
-            "video_title": results["metadatas"][0][i]["video_title"],
-            "timestamp": results["metadatas"][0][i]["timestamp"],
-            "url": results["metadatas"][0][i]["video_url"],
-        }
-        for i in range(1, top_k+1)
-    ]
 
 def search(user_query: str, top_k=3, explanations=True):
     enriched = enrich_user_query_llm(user_query)

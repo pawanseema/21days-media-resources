@@ -511,6 +511,73 @@
       font-size: 13px;
     }
 
+    .more-like-this-btn {
+      display: inline-block;
+      margin-top: 14px;
+      padding: 10px 16px;
+      border: none;
+      border-radius: 8px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: opacity 0.2s, transform 0.2s;
+    }
+
+    .more-like-this-btn:hover {
+      opacity: 0.92;
+      transform: translateY(-1px);
+    }
+
+    .related-banner {
+      display: none;
+      max-width: 1200px;
+      margin: 0 auto 20px;
+      padding: 16px 20px;
+      background: rgba(255, 255, 255, 0.95);
+      border-radius: 12px;
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      flex-wrap: wrap;
+    }
+
+    .related-banner.visible {
+      display: flex;
+    }
+
+    .related-banner-text {
+      color: #333;
+      font-size: 16px;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .related-banner-text span {
+      color: #667eea;
+      font-weight: 500;
+    }
+
+    .back-to-search-btn {
+      padding: 10px 16px;
+      border: 1px solid #667eea;
+      border-radius: 8px;
+      background: white;
+      color: #667eea;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .back-to-search-btn:hover {
+      background: #667eea;
+      color: white;
+    }
+
     .no-results {
       text-align: center;
       color: white;
@@ -735,6 +802,13 @@
       <p>No results found. Try a different search query.</p>
     </div>
 
+    <div class="related-banner" id="relatedBanner" aria-live="polite">
+      <div class="related-banner-text" id="relatedBannerText"></div>
+      <button type="button" class="back-to-search-btn" id="backToSearchBtn">
+        ← Back to Search Result
+      </button>
+    </div>
+
     <div class="results-container" id="results"></div>
   </div>
 
@@ -754,12 +828,21 @@
     let searchMode = 'videos'; // 'videos' or 'resources'
     // Debug fields on video cards (timestamp, confidence, hashtags).
     // Default true until /api/ui-config loads; Cloud Run sets SHOW_RESULT_DEBUG=false.
-    let uiConfig = { showResultDebug: true };
+    // enableMoreLikeThis defaults false until config loads / Cloud Run enables it.
+    let uiConfig = { showResultDebug: true, enableMoreLikeThis: false };
+
+    // More like this state (Phase B)
+    let currentVideoResults = [];
+    let lastOpenedResult = null;
+    let engagedSeed = null;
+    let relatedViewActive = false;
+    let searchSnapshot = null; // { query, results } for Back
 
     // API URLs
     const VIDEO_API_URL = '/search';
     const RESOURCE_API_URL = '/api/resources/search';
     const UI_CONFIG_URL = '/api/ui-config';
+    const RELATED_API_URL = '/api/videos/related';
 
     async function loadUiConfig() {
       try {
@@ -769,9 +852,40 @@
         if (typeof data.showResultDebug === 'boolean') {
           uiConfig.showResultDebug = data.showResultDebug;
         }
+        if (typeof data.enableMoreLikeThis === 'boolean') {
+          uiConfig.enableMoreLikeThis = data.enableMoreLikeThis;
+        }
       } catch (err) {
         console.warn('Could not load UI config; using defaults', err);
       }
+    }
+
+    function clearRelatedState() {
+      relatedViewActive = false;
+      searchSnapshot = null;
+      engagedSeed = null;
+      lastOpenedResult = null;
+      hideRelatedBanner();
+    }
+
+    function showRelatedBanner(seed) {
+      const banner = document.getElementById('relatedBanner');
+      const text = document.getElementById('relatedBannerText');
+      const title = (seed && seed.section_title) || 'this clip';
+      text.innerHTML = `Showing more like: <span>${escapeHtml(title)}</span>`;
+      banner.classList.add('visible');
+    }
+
+    function hideRelatedBanner() {
+      const banner = document.getElementById('relatedBanner');
+      banner.classList.remove('visible');
+      document.getElementById('relatedBannerText').textContent = '';
+    }
+
+    function seedKey(result) {
+      if (!result) return '';
+      const vid = result.video_id || extractVideoId(result.url || '');
+      return `${vid}|${result.timestamp || ''}`;
     }
 
     // Placeholders for different contexts
@@ -828,6 +942,8 @@
       }
     });
 
+    document.getElementById('backToSearchBtn').addEventListener('click', backToSearch);
+
     function switchContext(mode) {
       if (mode === searchMode) return; // Already in this mode
       
@@ -844,6 +960,8 @@
       renderExamplePrompts(mode);
       
       // Clear results
+      clearRelatedState();
+      currentVideoResults = [];
       document.getElementById('results').innerHTML = '';
       document.getElementById('error').style.display = 'none';
       document.getElementById('noResults').style.display = 'none';
@@ -869,10 +987,14 @@
       const noResults = document.getElementById('noResults');
       const searchBtn = document.getElementById('searchBtn');
 
-      // Clear previous results
+      // Clear previous results / related view
+      clearRelatedState();
+      currentVideoResults = [];
       resultsContainer.innerHTML = '';
       error.style.display = 'none';
       noResults.style.display = 'none';
+      noResults.querySelector('p').textContent =
+        'No results found. Try a different search query.';
 
       if (!query) {
         showError('Please enter a search query');
@@ -881,6 +1003,12 @@
 
       // Show loading state
       loading.style.display = 'block';
+      const loadingText = document.querySelector('#loading p');
+      if (loadingText) {
+        loadingText.textContent = searchMode === 'videos'
+          ? 'Searching for relevant videos...'
+          : 'Searching resources...';
+      }
       searchBtn.disabled = true;
 
       try {
@@ -925,6 +1053,10 @@
         (a, b) => (b.confidence || 0) - (a.confidence || 0)
       );
 
+      if (mode === 'videos') {
+        currentVideoResults = ordered;
+      }
+
       ordered.forEach((result, index) => {
         const card = mode === 'videos' 
           ? createVideoCard(result, index)
@@ -939,11 +1071,12 @@
       card.onclick = () => openVideoModal(result);
 
       // Extract video ID from URL
-      const videoId = extractVideoId(result.url);
+      const videoId = result.video_id || extractVideoId(result.url);
       const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
 
-      // Convert timestamp to seconds
-      const timestampSeconds = convertTimestampToSeconds(result.timestamp);
+      const showMoreBtn = uiConfig.enableMoreLikeThis &&
+        engagedSeed &&
+        seedKey(engagedSeed) === seedKey(result);
 
       card.innerHTML = `
         <div class="thumbnail-container">
@@ -968,8 +1101,19 @@
           ${uiConfig.showResultDebug && result.hashtags
             ? `<div class="hashtags">${escapeHtml(result.hashtags)}</div>`
             : ''}
+          ${showMoreBtn
+            ? `<button type="button" class="more-like-this-btn" data-more-like="1">More like this</button>`
+            : ''}
         </div>
       `;
+
+      const moreBtn = card.querySelector('[data-more-like]');
+      if (moreBtn) {
+        moreBtn.addEventListener('click', (e) => {
+          e.stopPropagation();
+          fetchMoreLikeThis(result);
+        });
+      }
 
       return card;
     }
@@ -1066,25 +1210,28 @@
     }
 
     function openVideoModal(result) {
-      const videoId = extractVideoId(result.url);
+      const videoId = result.video_id || extractVideoId(result.url);
       const timestampSeconds = convertTimestampToSeconds(result.timestamp);
 
-      // Mobile browsers block unmuted YouTube iframe autoplay. Opening the
-      // watch URL keeps the user gesture and starts playback in YouTube's
-      // native/mobile player at the section timestamp.
-      if (isMobileDevice()) {
+      // Soft cutover: with feature off, keep prior mobile behavior (open YouTube app/tab).
+      // With feature on, always use in-modal iframe so related exploration stays on-page.
+      if (isMobileDevice() && !uiConfig.enableMoreLikeThis) {
         const watchUrl = `https://www.youtube.com/watch?v=${videoId}&t=${timestampSeconds}s`;
         window.open(watchUrl, '_blank', 'noopener,noreferrer');
         return;
       }
 
+      lastOpenedResult = result;
+
       const modal = document.getElementById('videoModal');
       const modalTitle = document.getElementById('modalTitle');
       const videoContainer = document.getElementById('videoContainer');
 
+      // Desktop: autoplay OK. Mobile: no autoplay — user taps Play in the iframe.
+      const autoplay = isMobileDevice() ? 0 : 1;
       const embedUrl =
         `https://www.youtube.com/embed/${videoId}` +
-        `?start=${timestampSeconds}&autoplay=1&playsinline=1&rel=0`;
+        `?start=${timestampSeconds}&autoplay=${autoplay}&playsinline=1&rel=0`;
 
       modalTitle.textContent = `${result.video_title} - ${result.section_title}`;
       videoContainer.innerHTML =
@@ -1103,6 +1250,115 @@
       modal.style.display = 'none';
       videoContainer.innerHTML = ''; // Stop video playback
       document.body.style.overflow = 'auto'; // Restore scrolling
+
+      if (uiConfig.enableMoreLikeThis && lastOpenedResult && searchMode === 'videos') {
+        engagedSeed = lastOpenedResult;
+        lastOpenedResult = null;
+        if (currentVideoResults.length > 0) {
+          displayResults(currentVideoResults, 'videos');
+        }
+      } else {
+        lastOpenedResult = null;
+      }
+    }
+
+    async function fetchMoreLikeThis(seed) {
+      if (!uiConfig.enableMoreLikeThis || !seed) return;
+
+      const videoId = seed.video_id || extractVideoId(seed.url || '');
+      const timestamp = seed.timestamp;
+      if (!seed.chroma_id && (!videoId || !timestamp)) {
+        showError('Cannot find related clips for this result (missing video id or timestamp).');
+        return;
+      }
+
+      // Preserve original search once when first entering related view
+      if (!relatedViewActive) {
+        searchSnapshot = {
+          query: document.getElementById('query').value,
+          results: [...currentVideoResults],
+        };
+      }
+
+      const loading = document.getElementById('loading');
+      const error = document.getElementById('error');
+      const noResults = document.getElementById('noResults');
+      const searchBtn = document.getElementById('searchBtn');
+
+      error.style.display = 'none';
+      noResults.style.display = 'none';
+      loading.style.display = 'block';
+      const loadingText = document.querySelector('#loading p');
+      if (loadingText) {
+        loadingText.textContent = 'Finding similar clips...';
+      }
+      searchBtn.disabled = true;
+
+      const body = seed.chroma_id
+        ? { id: seed.chroma_id, top_k: 5 }
+        : { video_id: videoId, timestamp: timestamp, top_k: 5 };
+
+      try {
+        const response = await fetch(RELATED_API_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.error || 'Related search failed');
+        }
+
+        loading.style.display = 'none';
+        searchBtn.disabled = false;
+
+        relatedViewActive = true;
+        engagedSeed = null;
+        showRelatedBanner(data.seed || seed);
+
+        if (data.results && data.results.length > 0) {
+          displayResults(data.results, 'videos');
+        } else {
+          currentVideoResults = [];
+          document.getElementById('results').innerHTML = '';
+          noResults.style.display = 'block';
+          noResults.querySelector('p').textContent = 'No similar segments found.';
+        }
+      } catch (err) {
+        loading.style.display = 'none';
+        searchBtn.disabled = false;
+        showError(err.message || 'Failed to load related clips.');
+        console.error('Related error:', err);
+      }
+    }
+
+    function backToSearch() {
+      if (!searchSnapshot) {
+        clearRelatedState();
+        return;
+      }
+
+      const snapshot = searchSnapshot;
+      relatedViewActive = false;
+      searchSnapshot = null;
+      engagedSeed = null;
+      lastOpenedResult = null;
+      hideRelatedBanner();
+
+      document.getElementById('query').value = snapshot.query;
+      document.getElementById('error').style.display = 'none';
+      document.getElementById('noResults').style.display = 'none';
+      // Restore default empty-state copy
+      document.querySelector('#noResults p').textContent =
+        'No results found. Try a different search query.';
+
+      if (snapshot.results && snapshot.results.length > 0) {
+        displayResults(snapshot.results, 'videos');
+      } else {
+        currentVideoResults = [];
+        document.getElementById('results').innerHTML = '';
+      }
     }
 
     // Close modal when clicking outside

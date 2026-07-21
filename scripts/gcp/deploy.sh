@@ -86,7 +86,7 @@ gcloud beta run deploy "${SERVICE}" \
   --memory="${RUN_MEMORY}" \
   --timeout="${RUN_TIMEOUT}" \
   --allow-unauthenticated \
-  --set-env-vars="CHROMA_PERSIST_DIR=${CHROMA_MOUNT_PATH},SHOW_RESULT_DEBUG=false" \
+  --set-env-vars="CHROMA_PERSIST_DIR=${CHROMA_MOUNT_PATH},SHOW_RESULT_DEBUG=false,ENABLE_MORE_LIKE_THIS=false" \
   --set-secrets="OPENAI_API_KEY=${SECRET_OPENAI}:latest,YOUTUBE_API_KEY=${SECRET_YOUTUBE}:latest,ADMIN_API_KEY=${SECRET_ADMIN}:latest" \
   --add-volume="mount-path=${CHROMA_MOUNT_PATH},type=cloud-storage,bucket=${BUCKET},readonly=false"
 

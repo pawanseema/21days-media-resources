@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, send_from_directory
 # Add parent directory to path to import from search module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from search.video_search import search_video_sections
+from search.video_search import search_video_sections, recommend_related
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
@@ -62,10 +62,74 @@ def api_ui_config():
     SHOW_RESULT_DEBUG: when true, video cards show timestamp, confidence, hashtags;
     resource cards show file type and confidence. Default true when unset (local
     dev); Cloud Run deploy sets SHOW_RESULT_DEBUG=false.
+
+    ENABLE_MORE_LIKE_THIS: when true, UI may show More like this and related API
+    is enabled. Default false until rollout.
     """
     return jsonify({
         "showResultDebug": _env_flag("SHOW_RESULT_DEBUG", default=True),
+        "enableMoreLikeThis": _env_flag("ENABLE_MORE_LIKE_THIS", default=False),
     }), 200
+
+
+@app.route("/api/videos/related", methods=["POST"])
+def api_videos_related():
+    """
+    Return topic-similar timestamp sections for a seed clip.
+
+    Disabled unless ENABLE_MORE_LIKE_THIS is true.
+    Body: { "video_id", "timestamp", "top_k"? } or { "id": "<chroma_id>", "top_k"? }
+    """
+    if not _env_flag("ENABLE_MORE_LIKE_THIS", default=False):
+        return jsonify({
+            "error": "More like this is disabled",
+            "enableMoreLikeThis": False,
+        }), 404
+
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+
+        data = request.get_json() or {}
+        chroma_id = str(data.get("id") or data.get("chroma_id") or "").strip() or None
+        video_id = str(data.get("video_id") or "").strip() or None
+        timestamp = str(data.get("timestamp") or "").strip() or None
+        top_k = data.get("top_k", 5)
+        if not isinstance(top_k, int) or top_k < 1:
+            top_k = 5
+
+        if not chroma_id and not (video_id and timestamp):
+            return jsonify({
+                "error": "Provide id (chroma id), or both video_id and timestamp",
+            }), 400
+
+        payload = recommend_related(
+            video_id=video_id,
+            timestamp=timestamp,
+            chroma_id=chroma_id,
+            top_k=top_k,
+        )
+        results = payload.get("results") if isinstance(payload, dict) else payload
+        seed = payload.get("seed") if isinstance(payload, dict) else None
+        return jsonify({
+            "seed": seed,
+            "results": results or [],
+            "count": len(results or []),
+        }), 200
+
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            return jsonify({"error": msg}), 404
+        return jsonify({"error": msg}), 400
+    except Exception as e:
+        print(f"Error in videos related endpoint: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e),
+        }), 500
 
 @app.route("/search", methods=["POST"])
 def api_search():

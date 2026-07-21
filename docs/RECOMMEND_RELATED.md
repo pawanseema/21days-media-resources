@@ -36,8 +36,8 @@ User enters topic query
   → That card shows an explicit [More like this] button
   → User clicks [More like this]
   → Result list is replaced with related segment cards
-       Header: More like: {section_title}
-       Control: [← Back to “{original query}”]
+       Header: Showing more like: {section_title}
+       Control: [← Back to Search Result]
   → User can open any related card (same modal flow)
 ```
 
@@ -245,8 +245,8 @@ Related is **read-only** and public (same as `/search`). Not under `ADMIN_API_KE
 ### 6.3 Related results view
 
 - Replace `#results` with related cards  
-- Banner: `More like: {section_title}`  
-- Button: `← Back to search` restores previous results + query text  
+- Banner: `Showing more like: {section_title}`  
+- Button: `← Back to Search Result` restores previous results + query text  
 - Opening a related card uses the same modal; closing may again offer “More like this” on that new seed (chained exploration OK)
 
 ### 6.4 Debug fields
@@ -257,18 +257,18 @@ Respect existing `showResultDebug` for timestamp / confidence / hashtags on rela
 
 ## 7. Implementation plan (phased)
 
-### Phase A — Backend + flag (no UX change when off)
+### Phase A — Backend + flag (no UX change when off) ✅
 
-1. Env `ENABLE_MORE_LIKE_THIS` + `/api/ui-config` field  
-2. Harden `recommend_related` (resolve seed, filters, scoring, card-shaped output)  
-3. `POST /api/videos/related`  
-4. Unit/smoke tests with flag on/off  
+1. Env `ENABLE_MORE_LIKE_THIS` + `/api/ui-config` field ✅  
+2. Harden `recommend_related` (resolve seed, filters, scoring, card-shaped output) ✅  
+3. `POST /api/videos/related` ✅  
+4. Unit/smoke tests with flag on/off ✅ (`scripts/smoke_more_like_this.sh`)  
 
-### Phase B — UI behind flag
+### Phase B — UI behind flag ✅
 
-1. In-modal playback on mobile (no autoplay)  
-2. Track last-closed seed; show button only if flag on  
-3. Related fetch + replace list + Back  
+1. In-modal playback on mobile (no autoplay) when flag on; soft cutover keeps prior YouTube-open when flag off ✅  
+2. Track last-closed seed; show button only if flag on ✅  
+3. Related fetch + replace list + Back ✅ 
 
 ### Phase C — Dogfood then roll out
 
@@ -324,5 +324,7 @@ ENABLE_MORE_LIKE_THIS=true
 ## 10. Revision history
 
 - **v0.1** — Initial design: UX flow, segment-embedding retrieval, `ENABLE_MORE_LIKE_THIS` feature switch, API/UI/rollout plan.
+- **v0.2** — Phase A implemented: flag in `/api/ui-config`, hardened `recommend_related`, `POST /api/videos/related`, smoke script.
+- **v0.3** — Phase B implemented: UI behind flag (More like this after modal close, related list + Back, mobile in-modal when flag on).
 
 When implementing, bump this section and link PRs/commits here.
