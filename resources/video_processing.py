@@ -428,7 +428,17 @@ def extract_video_level_enrichment(description: str) -> dict:
     }
 
 def parse_timestamps(description):
+    """
+    Parse timestamp chapters from a cleaned YouTube description.
+
+    Section body is everything until the next timestamp line. Trailing
+    hashtag-only lines (common at the bottom of descriptions) are not
+    included in the last section's summary — hashtags belong in video-level
+    enrichment metadata instead.
+    """
     pattern = r"(\d{1,2}:\d{2}(?::\d{2})?)\s+(.+)"
+    # Lines that are only #tags (optional whitespace between them).
+    hashtag_line_re = re.compile(r"^(?:#\w+\s*)+$")
     lines = description.splitlines()
     timestamps = []
     for i, line in enumerate(lines):
@@ -438,9 +448,19 @@ def parse_timestamps(description):
             title = m.group(2)
             content = []
             for next_line in lines[i + 1:]:
-                if re.match(pattern, next_line.strip()):
+                stripped = next_line.strip()
+                if not stripped:
+                    continue
+                if re.match(pattern, stripped):
                     break
-                content.append(next_line.strip())
+                # Stop before bottom-of-description hashtag blocks
+                if hashtag_line_re.match(stripped):
+                    break
+                # Drop any #tags that appear mid-prose on a content line
+                cleaned = re.sub(r"#\w+", "", stripped).strip()
+                cleaned = re.sub(r"\s{2,}", " ", cleaned)
+                if cleaned:
+                    content.append(cleaned)
             summary = summarize(" ".join(content))
             timestamps.append({
                 "timestamp": ts,
