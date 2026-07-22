@@ -60,9 +60,7 @@ def _route_mutates_chroma():
 
 def _chroma_writes_forbidden_response():
     return jsonify({
-        "error": "Chroma writes are disabled in this environment",
-        "enableChromaWrites": False,
-        "hint": "Run ingest/update locally, then upload Chroma to GCS.",
+        "error": "Forbidden",
     }), 403
 
 
