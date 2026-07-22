@@ -989,6 +989,53 @@
     document.getElementById('query').placeholder = PLACEHOLDERS[searchMode];
     loadUiConfig();
 
+    function sleep(ms) {
+      return new Promise((resolve) => setTimeout(resolve, ms));
+    }
+
+    /**
+     * POST/GET JSON. On HTTP 5xx or network failure, retry once after a short
+     * delay to ride out transient Chroma / GCS FUSE disk I/O blips.
+     */
+    async function fetchJsonWithRetry(url, options, { retries = 1, retryDelayMs = 350 } = {}) {
+      let lastError = null;
+      for (let attempt = 0; attempt <= retries; attempt++) {
+        let response;
+        try {
+          response = await fetch(url, options);
+        } catch (err) {
+          lastError = err;
+          if (attempt < retries) {
+            console.warn(`Network error for ${url}; retrying…`, err);
+            await sleep(retryDelayMs);
+            continue;
+          }
+          throw err;
+        }
+
+        let data = {};
+        try {
+          data = await response.json();
+        } catch (_) {
+          data = {};
+        }
+
+        if (response.ok) {
+          return { response, data };
+        }
+
+        const errMsg = data.error || data.message || `Request failed (${response.status})`;
+        lastError = new Error(errMsg);
+        if (response.status >= 500 && attempt < retries) {
+          console.warn(`Request ${response.status} from ${url}; retrying…`, data);
+          await sleep(retryDelayMs);
+          continue;
+        }
+        throw lastError;
+      }
+      throw lastError || new Error('Request failed');
+    }
+
     async function performSearch() {
       const query = document.getElementById('query').value.trim();
       const resultsContainer = document.getElementById('results');
@@ -1022,22 +1069,12 @@
       searchBtn.disabled = true;
 
       try {
-        // Use appropriate API based on search mode
         const apiUrl = searchMode === 'videos' ? VIDEO_API_URL : RESOURCE_API_URL;
-        
-        const response = await fetch(apiUrl, {
+        const { data } = await fetchJsonWithRetry(apiUrl, {
           method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({ query: query, top_k: 5 })
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ query: query, top_k: 5 }),
         });
-
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Search failed');
-        }
 
         loading.style.display = 'none';
         searchBtn.disabled = false;
@@ -1309,16 +1346,11 @@
         : { video_id: videoId, timestamp: timestamp, top_k: 5 };
 
       try {
-        const response = await fetch(RELATED_API_URL, {
+        const { data } = await fetchJsonWithRetry(RELATED_API_URL, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify(body),
         });
-        const data = await response.json();
-
-        if (!response.ok) {
-          throw new Error(data.error || 'Related search failed');
-        }
 
         loading.style.display = 'none';
         searchBtn.disabled = false;

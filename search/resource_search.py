@@ -9,7 +9,7 @@ import os
 import sys
 import chromadb
 from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 import json
 import re
 from typing import List, Dict
@@ -46,6 +46,33 @@ except Exception:
         name=COLLECTION_NAME,
         metadata={"hnsw:space": "cosine"}
     )
+
+
+def _is_transient_chroma_error(exc: BaseException) -> bool:
+    """True for flaky GCS FUSE / SQLite I/O failures worth retrying."""
+    msg = str(exc).lower()
+    needles = (
+        "disk i/o",
+        "disk i/o error",
+        "code: 266",
+        "database is locked",
+        "input/output error",
+        "i/o error",
+        "unable to open database file",
+        "errno 5",
+    )
+    return any(n in msg for n in needles)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient_chroma_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
+    reraise=True,
+)
+def chroma_query(**kwargs):
+    """collection.query with retries for transient disk I/O errors."""
+    return collection.query(**kwargs)
 
 
 def enrich_user_query_llm(user_query: str):
@@ -89,7 +116,7 @@ def get_embedding(text):
 def chroma_vector_search(query: str, n_results=12):
     """Perform vector search in ChromaDB."""
     query_embedding = get_embedding(query)
-    return collection.query(
+    return chroma_query(
         query_embeddings=[query_embedding],
         n_results=n_results,
         include=["documents", "metadatas", "distances"]

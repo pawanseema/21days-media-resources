@@ -46,7 +46,9 @@ fi
 IMAGE="${IMAGE_BASE}:${IMAGE_TAG}"
 RUN_MEMORY="${RUN_MEMORY:-1Gi}"
 RUN_TIMEOUT="${RUN_TIMEOUT:-300}"
-RUN_MAX_INSTANCES="${RUN_MAX_INSTANCES:-3}"
+# Single instance: Chroma SQLite on GCS FUSE is safer with one container.
+# Concurrent requests still work via gunicorn threads (see gunicorn.conf.py).
+RUN_MAX_INSTANCES="${RUN_MAX_INSTANCES:-1}"
 RUN_MIN_INSTANCES="${RUN_MIN_INSTANCES:-0}"
 
 if ! artifact_repo_exists; then

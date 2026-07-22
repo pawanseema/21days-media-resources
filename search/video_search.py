@@ -2,7 +2,7 @@ import os
 import sys
 import chromadb
 from openai import OpenAI
-from tenacity import retry, stop_after_attempt, wait_exponential
+from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 import json
 import re
 from typing import List, Dict
@@ -48,6 +48,45 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 client = chromadb.PersistentClient(path=CHROMA_DIR)
 collection = client.get_collection(name=COLLECTION_NAME)
 
+
+def _is_transient_chroma_error(exc: BaseException) -> bool:
+    """True for flaky GCS FUSE / SQLite I/O failures worth retrying."""
+    msg = str(exc).lower()
+    needles = (
+        "disk i/o",
+        "disk i/o error",
+        "code: 266",
+        "database is locked",
+        "input/output error",
+        "i/o error",
+        "unable to open database file",
+        "errno 5",
+    )
+    return any(n in msg for n in needles)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient_chroma_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
+    reraise=True,
+)
+def chroma_query(**kwargs):
+    """collection.query with retries for transient disk I/O errors."""
+    return collection.query(**kwargs)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient_chroma_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
+    reraise=True,
+)
+def chroma_get(**kwargs):
+    """collection.get with retries for transient disk I/O errors."""
+    return collection.get(**kwargs)
+
+
 def enrich_user_query_llm(user_query: str):
     """
     Enrich user query for better search results.
@@ -91,7 +130,7 @@ def embed_user_query(q):
 def chroma_vector_search(query: str, n_results=12):
     query_embedding = get_embedding(query)
     # Note: Chroma query() include does not support "ids" in many versions; dedupe uses metadata keys.
-    return collection.query(
+    return chroma_query(
         query_embeddings=[query_embedding],
         n_results=n_results,
         include=["documents", "metadatas", "distances"],
@@ -469,7 +508,7 @@ def resolve_seed_section(video_id: str = None, timestamp: str = None, chroma_id:
     Raises ValueError if not found or invalid args.
     """
     if chroma_id and str(chroma_id).strip():
-        got = collection.get(
+        got = chroma_get(
             ids=[str(chroma_id).strip()],
             include=["metadatas", "documents", "embeddings"],
         )
@@ -494,7 +533,7 @@ def resolve_seed_section(video_id: str = None, timestamp: str = None, chroma_id:
     if not vid or not ts:
         raise ValueError("Provide chroma id, or both video_id and timestamp")
 
-    got = collection.get(
+    got = chroma_get(
         where={
             "$and": [
                 {"video_id": vid},
@@ -582,7 +621,7 @@ def recommend_related(
 
     # Fetch extra neighbors so filters still leave top_k
     n_fetch = min(max(top_k * 8 + 10, 25), 80)
-    raw = collection.query(
+    raw = chroma_query(
         query_embeddings=[embedding],
         n_results=n_fetch,
         include=["documents", "metadatas", "distances"],
