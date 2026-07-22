@@ -42,7 +42,7 @@ chmod +x scripts/gcp/*.sh
 |--------|-------------|
 | `bootstrap.sh` | **Once per GCP project/env**, or after adding new infra. Creates APIs, Artifact Registry, GCS bucket, runtime SA, IAM, secrets, uploads Chroma. |
 | `upload-chroma.sh` | After **local ingestion** changes (new videos indexed locally). |
-| `deploy.sh` | Every **release** (app/code change). Builds image + deploys Cloud Run revision. Default `RUN_MAX_INSTANCES=1` (safer for Chroma on GCS FUSE). |
+| `deploy.sh` | Every **release** (app/code change). Builds image + deploys Cloud Run revision. Default `RUN_MAX_INSTANCES=1` (safer for Chroma on GCS FUSE). Sets `ENABLE_CHROMA_WRITES=false` (prod read-only). |
 | `verify.sh` | After bootstrap or deploy; `--smoke` curls `/health`, `/api/ui-config`, and `/api/videos/related`. |
 
 ## Long-term workflow

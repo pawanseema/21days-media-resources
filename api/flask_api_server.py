@@ -21,6 +21,28 @@ ADMIN_PROTECTED_ROUTES = {
     ("POST", "/api/videos/ingest"),
 }
 
+# HTML admin tools for handout ingest/update (local only when Chroma writes disabled).
+RESOURCE_ADMIN_HTML = {
+    "resource_form.html",
+    "resource_update.html",
+}
+
+
+def _env_flag(name, default=False):
+    """Parse a boolean-ish environment variable."""
+    raw = os.environ.get(name)
+    if raw is None:
+        return default
+    return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _chroma_writes_enabled():
+    """
+    When false (Cloud Run default), block routes that mutate Chroma.
+    Local ingest stays available by leaving ENABLE_CHROMA_WRITES unset/true.
+    """
+    return _env_flag("ENABLE_CHROMA_WRITES", default=True)
+
 
 def _route_requires_admin_auth():
     """Return True for mutating admin-only HTTP routes."""
@@ -31,12 +53,30 @@ def _route_requires_admin_auth():
     return False
 
 
+def _route_mutates_chroma():
+    """Return True for HTTP routes that write to Chroma."""
+    return _route_requires_admin_auth()
+
+
+def _chroma_writes_forbidden_response():
+    return jsonify({
+        "error": "Chroma writes are disabled in this environment",
+        "enableChromaWrites": False,
+        "hint": "Run ingest/update locally, then upload Chroma to GCS.",
+    }), 403
+
+
 @app.before_request
 def require_admin_key():
     """
-    When ADMIN_API_KEY is set, require X-Admin-Key on mutating routes.
-    Unset locally so dev workflows (Flask on 5005, HTML forms) stay unchanged.
+    Block Chroma-mutating routes when ENABLE_CHROMA_WRITES is false.
+
+    When writes are enabled and ADMIN_API_KEY is set, require X-Admin-Key on
+    those same routes. Unset ADMIN_API_KEY locally so HTML forms keep working.
     """
+    if _route_mutates_chroma() and not _chroma_writes_enabled():
+        return _chroma_writes_forbidden_response()
+
     admin_key = os.environ.get("ADMIN_API_KEY", "").strip()
     if not admin_key or not _route_requires_admin_auth():
         return None
@@ -45,13 +85,6 @@ def require_admin_key():
     if provided != admin_key:
         return jsonify({"error": "Unauthorized"}), 401
     return None
-
-def _env_flag(name, default=False):
-    """Parse a boolean-ish environment variable."""
-    raw = os.environ.get(name)
-    if raw is None:
-        return default
-    return raw.strip().lower() in ("1", "true", "yes", "on")
 
 
 @app.route("/api/ui-config", methods=["GET"])
@@ -65,10 +98,14 @@ def api_ui_config():
 
     ENABLE_MORE_LIKE_THIS: when true, UI may show More like this and related API
     is enabled. Default true (rollout on); set false to disable.
+
+    ENABLE_CHROMA_WRITES: when true, resource/video ingest-update APIs and admin
+    HTML forms are allowed. Cloud Run sets false (read-only Chroma); local default true.
     """
     return jsonify({
         "showResultDebug": _env_flag("SHOW_RESULT_DEBUG", default=True),
         "enableMoreLikeThis": _env_flag("ENABLE_MORE_LIKE_THIS", default=True),
+        "enableChromaWrites": _chroma_writes_enabled(),
     }), 200
 
 
@@ -298,6 +335,9 @@ def index():
 @app.route("/ui/<path:filename>")
 def ui_static(filename):
     """Serve static assets from the ui directory (images, etc.)."""
+    base = os.path.basename(filename)
+    if base in RESOURCE_ADMIN_HTML and not _chroma_writes_enabled():
+        return _chroma_writes_forbidden_response()
     return send_from_directory(UI_DIR, filename)
 
 @app.route("/api/resources/search", methods=["POST"])
@@ -353,7 +393,9 @@ def api_search_resources():
 @app.route("/resource-form")
 @app.route("/resource_form.html")
 def resource_form():
-    """Serve the resource ingestion form page."""
+    """Serve the resource ingestion form page (local / writes-enabled only)."""
+    if not _chroma_writes_enabled():
+        return _chroma_writes_forbidden_response()
     return send_from_directory(UI_DIR, 'resource_form.html')
 
 @app.route("/api/resources/<resource_id>", methods=["GET"])
@@ -460,7 +502,9 @@ def resource_search():
 @app.route("/resource-update")
 @app.route("/resource_update.html")
 def resource_update():
-    """Serve the resource update page."""
+    """Serve the resource update page (local / writes-enabled only)."""
+    if not _chroma_writes_enabled():
+        return _chroma_writes_forbidden_response()
     return send_from_directory(UI_DIR, 'resource_update.html')
 
 if __name__ == "__main__":
