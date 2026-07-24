@@ -26,6 +26,7 @@ from config import get_chroma_dir, get_audit_csv_path, load_openai_api_key
 # -----------------------------
 CHROMA_DIR = get_chroma_dir()
 COLLECTION_NAME = "sahajayoga_21_days_videos"
+RELATED_COLLECTION_NAME = "sahajayoga_21_days_videos_related"
 AUDIT_CSV_PATH = get_audit_csv_path()
 
 # Ensure persist directory exists
@@ -416,30 +417,94 @@ def get_collection_stats(verbose: bool = True) -> Dict[str, Any]:
     return stats
 
 
-def clear_collection(confirm: bool = False, verbose: bool = True) -> bool:
+def _related_collection_or_none():
+    """Return the More like this collection if it exists, else None."""
+    try:
+        return client.get_collection(name=RELATED_COLLECTION_NAME)
+    except Exception:
+        return None
+
+
+def _clear_related_collection(verbose: bool = True) -> int:
     """
-    Clear all entries from the collection.
-    
-    Args:
-        confirm: If True, skip confirmation prompt and delete immediately
-        verbose: If True, print status messages
-    
-    Returns:
-        True if deletion was successful, False if cancelled
+    Remove all rows from the related collection (or drop it if easier).
+
+    Returns number of related rows removed (0 if collection absent/empty).
     """
-    # Get current count
-    results = collection.get()
-    count = len(results["ids"])
-    
+    related = _related_collection_or_none()
+    if related is None:
+        if verbose:
+            print(f"ℹ️  Related collection '{RELATED_COLLECTION_NAME}' not present (nothing to clear)")
+        return 0
+
+    got = related.get(include=[])
+    ids = got.get("ids") or []
+    count = len(ids)
     if count == 0:
         if verbose:
-            print("ℹ️  Collection is already empty")
-        return True
-    
+            print(f"ℹ️  Related collection '{RELATED_COLLECTION_NAME}' is already empty")
+        return 0
+
+    related.delete(ids=ids)
     if verbose:
-        print(f"\n⚠️  WARNING: This will delete ALL {count} entries from the collection '{COLLECTION_NAME}'")
-        print("   This action cannot be undone!\n")
-    
+        print(
+            f"✅ Successfully deleted {count} entries from related collection "
+            f"'{RELATED_COLLECTION_NAME}'"
+        )
+    return count
+
+
+def _clear_audit_csv(verbose: bool = True) -> bool:
+    """Delete the video ingest audit CSV if it exists. Returns True if removed."""
+    if not os.path.exists(AUDIT_CSV_PATH):
+        if verbose:
+            print(f"ℹ️  Audit CSV not found at: {AUDIT_CSV_PATH}")
+        return False
+    os.remove(AUDIT_CSV_PATH)
+    if verbose:
+        print(f"✅ Deleted audit CSV: {AUDIT_CSV_PATH}")
+    return True
+
+
+def clear_collection(confirm: bool = False, verbose: bool = True) -> bool:
+    """
+    Clear all video-ingest local state:
+    - main Chroma collection
+    - related (More like this) collection
+    - audit CSV
+
+    Does not touch the resources/handouts collection.
+    """
+    # Main collection count
+    results = collection.get()
+    main_count = len(results["ids"])
+
+    related = _related_collection_or_none()
+    related_count = 0
+    if related is not None:
+        related_count = len((related.get(include=[]) or {}).get("ids") or [])
+
+    audit_exists = os.path.exists(AUDIT_CSV_PATH)
+
+    if main_count == 0 and related_count == 0 and not audit_exists:
+        if verbose:
+            print("ℹ️  Video collections and audit CSV are already clear")
+        return True
+
+    if verbose:
+        audit_line = (
+            f"   - audit CSV: {AUDIT_CSV_PATH}\n"
+            if audit_exists
+            else "   - audit CSV: (none)\n"
+        )
+        print(
+            f"\n⚠️  WARNING: This will delete ALL video-ingest local data:\n"
+            f"   - {main_count} entries from '{COLLECTION_NAME}'\n"
+            f"   - {related_count} entries from '{RELATED_COLLECTION_NAME}'\n"
+            f"{audit_line}"
+            f"   This action cannot be undone!\n"
+        )
+
     if not confirm:
         try:
             response = input("Are you sure you want to proceed? Type 'yes' to confirm: ").strip().lower()
@@ -451,14 +516,20 @@ def clear_collection(confirm: bool = False, verbose: bool = True) -> bool:
             if verbose:
                 print("\n❌ Deletion cancelled")
             return False
-    
+
     try:
-        # Delete all entries by their IDs
-        collection.delete(ids=results["ids"])
-        
-        if verbose:
-            print(f"✅ Successfully deleted {count} entries from collection '{COLLECTION_NAME}'")
-        
+        if main_count > 0:
+            collection.delete(ids=results["ids"])
+            if verbose:
+                print(
+                    f"✅ Successfully deleted {main_count} entries from collection "
+                    f"'{COLLECTION_NAME}'"
+                )
+        elif verbose:
+            print(f"ℹ️  Collection '{COLLECTION_NAME}' is already empty")
+
+        _clear_related_collection(verbose=verbose)
+        _clear_audit_csv(verbose=verbose)
         return True
     except Exception as e:
         if verbose:
@@ -548,7 +619,7 @@ def delete_entries_by_video_id(
     verbose: bool = True
 ) -> bool:
     """
-    Delete all Chroma entries and audit CSV rows for a specific video_id.
+    Delete all Chroma entries (main + related) and audit CSV rows for a video_id.
 
     Safety model:
     - Default dry_run=True (no deletion)
@@ -573,6 +644,14 @@ def delete_entries_by_video_id(
             sample = entry_ids[:5]
             print(f"   Sample IDs: {sample}" + (" ..." if len(entry_ids) > 5 else ""))
 
+        related = _related_collection_or_none()
+        related_n = 0
+        if related is not None:
+            related_n = len(
+                (related.get(where={"video_id": video_id}, include=[]) or {}).get("ids") or []
+            )
+        print(f"📦 Matching related-collection entries: {related_n}")
+
     csv_result = _delete_video_from_audit_csv(video_id, dry_run=dry_run, verbose=verbose)
 
     if dry_run:
@@ -594,6 +673,20 @@ def delete_entries_by_video_id(
     else:
         if verbose:
             print("ℹ️  No matching Chroma entries to delete.")
+
+    related = _related_collection_or_none()
+    if related is not None:
+        related_got = related.get(where={"video_id": video_id}, include=[])
+        related_ids = related_got.get("ids") or []
+        if related_ids:
+            related.delete(ids=related_ids)
+            if verbose:
+                print(
+                    f"✅ Deleted {len(related_ids)} related-collection entry(ies) "
+                    f"for video_id '{video_id}'"
+                )
+        elif verbose:
+            print("ℹ️  No matching related-collection entries to delete.")
 
     # CSV is already updated when dry_run=False
     if verbose and csv_result["file_exists"] and csv_result["matching_rows"] == 0:
@@ -621,7 +714,7 @@ if __name__ == "__main__":
         print("  python browse_videos.py get <entry_id>           # Get specific entry")
         print("  python browse_videos.py search <query> [limit]   # Semantic search")
         print("  python browse_videos.py delete-video <video_id> [--dry-run] [--yes]  # Delete one video's entries + audit rows")
-        print("  python browse_videos.py clear [--yes]            # Clear all entries (DESTRUCTIVE)")
+        print("  python browse_videos.py clear [--yes]            # Clear main + related collections and audit CSV (DESTRUCTIVE)")
         sys.exit(0)
     
     command = sys.argv[1].lower()

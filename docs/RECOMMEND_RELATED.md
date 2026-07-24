@@ -118,9 +118,9 @@ With the flag **off**:
 **Do not re-run the user’s text query.**  
 Resolve the seed segment, then find nearest **timestamp_section** neighbors.
 
-**v1.1 (current):** query-time embedding of **section title + summary only** (one OpenAI Embeddings call per More like this). Stored Chroma vectors are unchanged; `/search` is unchanged.
+**v1.2 (current):** More like this queries the parallel collection `sahajayoga_21_days_videos_related` (title+summary embeds). Seed vector is loaded from that collection (fallback: query-time embed). Card metadata including `section_duration_seconds` is hydrated from the main collection. `/search` is unchanged aside from exposing duration on cards.
 
-**Later (optional):** parallel segment-focused collection at ingest to avoid the per-click embed.
+**Backfill:** `scripts/repair_related_embeddings.py` and `scripts/repair_section_durations.py` (fresh ingest also writes both).
 
 ### 4.2 Pipeline
 

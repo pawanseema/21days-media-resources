@@ -456,6 +456,17 @@
       margin-bottom: 12px;
     }
 
+    .clip-duration {
+      display: inline-block;
+      background: #eef1ff;
+      padding: 5px 12px;
+      border-radius: 20px;
+      font-size: 13px;
+      color: #4a5568;
+      margin: 0 8px 12px 0;
+      font-variant-numeric: tabular-nums;
+    }
+
     .summary {
       color: #555;
       line-height: 1.6;
@@ -1112,6 +1123,19 @@
       });
     }
 
+    function formatClipDuration(seconds) {
+      if (seconds == null || seconds === '') return '';
+      const total = Math.floor(Number(seconds));
+      if (!Number.isFinite(total) || total < 0) return '';
+      const h = Math.floor(total / 3600);
+      const m = Math.floor((total % 3600) / 60);
+      const s = total % 60;
+      if (h > 0) {
+        return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+      }
+      return `${m}:${String(s).padStart(2, '0')}`;
+    }
+
     function createVideoCard(result, index) {
       const card = document.createElement('div');
       card.className = 'result-card';
@@ -1125,6 +1149,8 @@
         engagedSeed &&
         seedKey(engagedSeed) === seedKey(result);
 
+      const durationLabel = formatClipDuration(result.section_duration_seconds);
+
       card.innerHTML = `
         <div class="thumbnail-container">
           <img src="${thumbnailUrl}" alt="${result.video_title}" 
@@ -1137,8 +1163,11 @@
           ${showMoreBtn
             ? `<button type="button" class="more-like-this-btn" data-more-like="1">Find similar clips</button>`
             : ''}
+          ${durationLabel
+            ? `<span class="clip-duration" title="Clip length">Length ${escapeHtml(durationLabel)}</span>`
+            : ''}
           ${uiConfig.showResultDebug
-            ? `<div class="timestamp">⏱️ ${result.timestamp || 'N/A'}</div>`
+            ? `<span class="timestamp" title="Segment start time in the video">Starts ${result.timestamp || 'N/A'}</span>`
             : ''}
           <div class="summary">${escapeHtml(result.summary || 'No summary available')}</div>
           <div class="metadata">

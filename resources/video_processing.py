@@ -117,6 +117,169 @@ except Exception as e:
             metadata={"hnsw:space": "cosine"}
         )
 
+# Parallel collection for More like this (segment title+summary embeddings only).
+RELATED_COLLECTION_NAME = "sahajayoga_21_days_videos_related"
+
+
+def get_related_collection():
+    """Get or create the segment-focused related-neighbors collection."""
+    return client.get_or_create_collection(
+        name=RELATED_COLLECTION_NAME,
+        metadata={"hnsw:space": "cosine"},
+    )
+
+
+def timestamp_to_seconds(ts: str) -> int:
+    """Parse MM:SS or HH:MM:SS to seconds. Returns -1 if invalid."""
+    if not ts:
+        return -1
+    parts = str(ts).strip().split(":")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return -1
+    if len(nums) == 2:
+        return nums[0] * 60 + nums[1]
+    if len(nums) == 3:
+        return nums[0] * 3600 + nums[1] * 60 + nums[2]
+    return -1
+
+
+def parse_youtube_duration(iso_duration: str) -> int:
+    """Parse YouTube contentDetails.duration (ISO-8601) to seconds."""
+    if not iso_duration:
+        return 0
+    m = re.match(
+        r"^PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?$",
+        str(iso_duration).strip(),
+    )
+    if not m:
+        return 0
+    hours = int(m.group(1) or 0)
+    minutes = int(m.group(2) or 0)
+    seconds = int(m.group(3) or 0)
+    return hours * 3600 + minutes * 60 + seconds
+
+
+def fetch_video_duration_seconds(video_id: str) -> int:
+    """Fetch video length in seconds via YouTube Data API."""
+    video_res = youtube.videos().list(part="contentDetails", id=video_id).execute()
+    items = video_res.get("items") or []
+    if not items:
+        return 0
+    iso = (items[0].get("contentDetails") or {}).get("duration") or ""
+    return parse_youtube_duration(iso)
+
+
+def assign_section_durations(sections, video_duration_seconds=None):
+    """
+    Set section_duration_seconds on each section dict.
+
+    Sections are sorted by timestamp first so out-of-order YouTube description
+    lines still get correct lengths (next chapter in time − this start).
+
+    Non-last: next timestamp − this timestamp.
+    Last: video_duration_seconds − this timestamp (if known).
+    """
+    if not sections:
+        return sections
+    sections.sort(key=lambda s: timestamp_to_seconds(s.get("timestamp", "")))
+    vdur = int(video_duration_seconds) if video_duration_seconds else 0
+    for i, sec in enumerate(sections):
+        start = timestamp_to_seconds(sec.get("timestamp", ""))
+        if start < 0:
+            sec.pop("section_duration_seconds", None)
+            continue
+        end = None
+        if i + 1 < len(sections):
+            nxt = timestamp_to_seconds(sections[i + 1].get("timestamp", ""))
+            if nxt >= start:
+                end = nxt
+        elif vdur > start:
+            end = vdur
+        if end is not None and end >= start:
+            sec["section_duration_seconds"] = int(end - start)
+        else:
+            sec.pop("section_duration_seconds", None)
+    return sections
+
+
+def segment_focus_text(section_title: str = "", section_summary: str = "") -> str:
+    """Lean text for More like this embeddings (title + summary only)."""
+    title = str(section_title or "").strip()
+    summary = str(section_summary or "").strip()
+    parts = []
+    if title:
+        parts.append(f"Section: {title}")
+    if summary:
+        parts.append(f"Summary: {summary}")
+    return "\n".join(parts)
+
+
+def _chroma_safe_meta(meta: dict) -> dict:
+    """Drop None values; Chroma metadata must be simple types."""
+    out = {}
+    for k, v in (meta or {}).items():
+        if v is None:
+            continue
+        if isinstance(v, (str, int, float, bool)):
+            out[k] = v
+        else:
+            out[k] = str(v)
+    return out
+
+
+def upsert_related_section(chroma_id: str, meta: dict, focus_text: str = None):
+    """
+    Embed title+summary and upsert into the related collection.
+
+    Uses the same id as the main timestamp_section row.
+    """
+    meta = dict(meta or {})
+    text = focus_text
+    if text is None:
+        text = segment_focus_text(
+            meta.get("section_title", ""),
+            meta.get("section_summary", ""),
+        )
+    if not text.strip():
+        # Nothing useful to embed; skip
+        return False
+
+    related = get_related_collection()
+    embedding = get_embedding(text)
+    safe_meta = _chroma_safe_meta({
+        **meta,
+        "type": "timestamp_section",
+    })
+    existing = related.get(ids=[chroma_id])
+    if existing and existing.get("ids"):
+        related.update(
+            ids=[chroma_id],
+            documents=[text],
+            embeddings=[embedding],
+            metadatas=[safe_meta],
+        )
+    else:
+        related.add(
+            ids=[chroma_id],
+            documents=[text],
+            embeddings=[embedding],
+            metadatas=[safe_meta],
+        )
+    return True
+
+
+def delete_related_for_video(video_id: str) -> int:
+    """Delete related-collection rows for a video_id. Returns count deleted."""
+    related = get_related_collection()
+    got = related.get(where={"video_id": video_id}, include=[])
+    ids = got.get("ids") or []
+    if ids:
+        related.delete(ids=ids)
+    return len(ids)
+
+
 # -----------------------------
 # Chakra Map
 # -----------------------------
@@ -315,7 +478,7 @@ def clean_description(text: str) -> str:
     Removes boilerplate section and unwanted lines from YouTube video description.
     - Removes boilerplate section between 'Be ready for life-changing transformative experiences!' 
       and 'JUMP DIRECTLY TO A SECTION USING TIMESTAMPS BELOW'
-    - Filters out unwanted lines (URLs, session info, etc.)
+    - Filters out unwanted lines (URLs, uppercase DAY schedule chrome, etc.)
     """
     # Step 1: Remove boilerplate section
     pattern = (
@@ -331,7 +494,7 @@ def clean_description(text: str) -> str:
     # Filter out unwanted lines:
     # - Lines beginning with URLs
     # - Lines beginning with specific text patterns
-    # - words like 'Session', 'DAY', or 'Register'
+    # - schedule chrome that starts with uppercase "DAY" (not prose containing "day")
     # - or are entirely uppercase short titles
     for line in lines:
         if (
@@ -339,8 +502,7 @@ def clean_description(text: str) -> str:
             or re.search(r'https?://', line)  # Lines containing URL anywhere
             or line.startswith("Access recording of all previous sessions - ")
             or line.startswith("In order to join our mentor program, please fill out this form -")
-            or re.search(r'\bSession\b', line, re.IGNORECASE)
-            or re.search(r'\bDAY\b', line, re.IGNORECASE)
+            or re.match(r"^DAY\b", line)  # e.g. "DAY 45 …", not "during the day…"
             or line.isupper()
             or line.startswith("JUMP DIRECTLY TO A SECTION")
         ):
@@ -498,8 +660,12 @@ def process_video_by_id(video_id: str, overwrite: bool = False):
             )
         collection.delete(ids=existing_ids)
         deleted_existing = existing_count
+        delete_related_for_video(video_id)
 
-    video_res = youtube.videos().list(part="snippet", id=video_id).execute()
+    video_res = youtube.videos().list(
+        part="snippet,contentDetails",
+        id=video_id,
+    ).execute()
     items = video_res.get("items", [])
     if not items:
         raise ValueError(f"Video not found on YouTube for id: {video_id}")
@@ -510,10 +676,14 @@ def process_video_by_id(video_id: str, overwrite: bool = False):
     original_desc = snippet.get("description", "")
     actual_published_at = snippet.get("publishedAt", "")
     url = f"https://www.youtube.com/watch?v={video_id}"
+    video_duration_seconds = parse_youtube_duration(
+        (vid_data.get("contentDetails") or {}).get("duration") or ""
+    )
 
     desc = clean_description(original_desc)
     enrichment = extract_video_level_enrichment(desc)
     timestamps = parse_timestamps(desc)
+    assign_section_durations(timestamps, video_duration_seconds=video_duration_seconds)
 
     rows = []
     video_row = {
@@ -529,12 +699,15 @@ def process_video_by_id(video_id: str, overwrite: bool = False):
         "section_summary": enrichment["video_summary"],
         "video_url": url,
         "published_at": actual_published_at,
+        "video_duration_seconds": video_duration_seconds,
     }
     video_row["embedding_text"] = build_embedding_text(video_row)
     video_row["embedding"] = get_embedding(video_row["embedding_text"])
     rows.append(video_row)
 
-    video_meta = {k: v for k, v in video_row.items() if k not in ["embedding", "embedding_text"]}
+    video_meta = _chroma_safe_meta(
+        {k: v for k, v in video_row.items() if k not in ["embedding", "embedding_text"]}
+    )
     collection.add(
         documents=[video_row["embedding_text"]],
         embeddings=[video_row["embedding"]],
@@ -556,28 +729,50 @@ def process_video_by_id(video_id: str, overwrite: bool = False):
             "section_summary": ts["section_summary"],
             "video_url": url,
             "published_at": actual_published_at,
+            "video_duration_seconds": video_duration_seconds,
         }
+        if ts.get("section_duration_seconds") is not None:
+            ts_row["section_duration_seconds"] = ts["section_duration_seconds"]
         ts_row["embedding_text"] = build_embedding_text(ts_row)
         ts_row["embedding"] = get_embedding(ts_row["embedding_text"])
         rows.append(ts_row)
 
-        ts_meta = {k: v for k, v in ts_row.items() if k not in ["embedding", "embedding_text"]}
+        chroma_id = f"{video_id}_{i}_ts"
+        ts_meta = _chroma_safe_meta(
+            {k: v for k, v in ts_row.items() if k not in ["embedding", "embedding_text"]}
+        )
         collection.add(
             documents=[ts_row["embedding_text"]],
             embeddings=[ts_row["embedding"]],
             metadatas=[ts_meta],
-            ids=[f"{video_id}_{i}_ts"],
+            ids=[chroma_id],
         )
+        upsert_related_section(chroma_id, ts_meta)
 
-    return {
+    result = {
         "video_id": video_id,
         "video_title": video_title,
         "published_at": actual_published_at,
+        "video_duration_seconds": video_duration_seconds,
         "rows_added": len(rows),
         "timestamp_sections_added": len(timestamps),
         "deleted_existing_rows": deleted_existing,
         "url": url,
     }
+
+    from resources.verify_timestamp_sections import (
+        assert_video_matches_youtube,
+        verify_after_ingest_enabled,
+    )
+
+    if verify_after_ingest_enabled():
+        verify_report = assert_video_matches_youtube(video_id)
+        result["timestamp_sections_verified"] = True
+        result["timestamp_verify"] = verify_report.to_dict()
+    else:
+        result["timestamp_sections_verified"] = False
+
+    return result
 
 # -----------------------------
 # MAIN INGESTION
@@ -602,15 +797,23 @@ def process_playlist(title):
             print(f"⏭️  Skipping video {vid_id} ({v['video_title']}) - already exists in ChromaDB")
             continue
         
-        vid_data = youtube.videos().list(part="snippet", id=vid_id).execute()["items"][0]
+        vid_data = youtube.videos().list(
+            part="snippet,contentDetails",
+            id=vid_id,
+        ).execute()["items"][0]
         original_desc = vid_data["snippet"]["description"]
         url = f"https://www.youtube.com/watch?v={vid_id}"
         
         # Use snippet.publishedAt from videos API (matches YouTube Studio) instead of videoPublishedAt from playlistItems
         actual_published_at = vid_data["snippet"]["publishedAt"]
+        video_duration_seconds = parse_youtube_duration(
+            (vid_data.get("contentDetails") or {}).get("duration") or ""
+        )
 
         desc = clean_description(original_desc)
         enrichment = extract_video_level_enrichment(desc)
+        timestamps = parse_timestamps(desc)
+        assign_section_durations(timestamps, video_duration_seconds=video_duration_seconds)
 
         # ---- VIDEO-LEVEL EMBEDDING ----
         video_row = {
@@ -625,7 +828,8 @@ def process_playlist(title):
             "section_title": "Video Summary",
             "section_summary": enrichment["video_summary"],
             "video_url": url,
-            "published_at": actual_published_at  # Use snippet.publishedAt from videos API
+            "published_at": actual_published_at,  # Use snippet.publishedAt from videos API
+            "video_duration_seconds": video_duration_seconds,
         }
 
         video_row["embedding_text"] = build_embedding_text(video_row)
@@ -633,7 +837,9 @@ def process_playlist(title):
         rows.append(video_row)
 
         # Create metadata dict without embedding fields (ChromaDB metadata only supports simple types)
-        metadata_for_chroma = {k: v for k, v in video_row.items() if k not in ["embedding", "embedding_text"]}
+        metadata_for_chroma = _chroma_safe_meta(
+            {k: v for k, v in video_row.items() if k not in ["embedding", "embedding_text"]}
+        )
         
         collection.add(
             documents=[video_row["embedding_text"]],
@@ -643,7 +849,7 @@ def process_playlist(title):
         )
 
         # ---- TIMESTAMP-LEVEL EMBEDDINGS ----
-        for i, ts in enumerate(parse_timestamps(desc)):
+        for i, ts in enumerate(timestamps):
             ts_row = {
                 "video_id": vid_id,
                 "video_title": v["video_title"],
@@ -656,22 +862,37 @@ def process_playlist(title):
                 "section_title": ts["section_title"],
                 "section_summary": ts["section_summary"],
                 "video_url": url,
-                "published_at": actual_published_at  # Use snippet.publishedAt from videos API
+                "published_at": actual_published_at,  # Use snippet.publishedAt from videos API
+                "video_duration_seconds": video_duration_seconds,
             }
+            if ts.get("section_duration_seconds") is not None:
+                ts_row["section_duration_seconds"] = ts["section_duration_seconds"]
 
             ts_row["embedding_text"] = build_embedding_text(ts_row)
             ts_row["embedding"] = get_embedding(ts_row["embedding_text"])
             rows.append(ts_row)
 
-            # Create metadata dict without embedding fields (ChromaDB metadata only supports simple types)
-            metadata_for_chroma = {k: v for k, v in ts_row.items() if k not in ["embedding", "embedding_text"]}
+            chroma_id = f"{vid_id}_{i}_ts"
+            metadata_for_chroma = _chroma_safe_meta(
+                {k: v for k, v in ts_row.items() if k not in ["embedding", "embedding_text"]}
+            )
             
             collection.add(
                 documents=[ts_row["embedding_text"]],
                 embeddings=[ts_row["embedding"]],
                 metadatas=[metadata_for_chroma],
-                ids=[f"{vid_id}_{i}_ts"]
+                ids=[chroma_id],
             )
+            upsert_related_section(chroma_id, metadata_for_chroma)
+
+        from resources.verify_timestamp_sections import (
+            assert_video_matches_youtube,
+            verify_after_ingest_enabled,
+        )
+
+        if verify_after_ingest_enabled():
+            assert_video_matches_youtube(vid_id)
+            print(f"  ✓ timestamp sections match YouTube for {vid_id}")
 
     print(f"✅ Processed {len(videos)} videos from playlist '{title}'")
     return rows

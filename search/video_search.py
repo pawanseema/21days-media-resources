@@ -22,6 +22,7 @@ from config import load_openai_api_key, get_chroma_dir
 
 CHROMA_DIR = get_chroma_dir()
 COLLECTION_NAME = "sahajayoga_21_days_videos"
+RELATED_COLLECTION_NAME = "sahajayoga_21_days_videos_related"
 
 # Vector retrieval: fetch this many neighbors per query embedding (original + enriched merged, capped below).
 INITIAL_VECTOR_CANDIDATES = 60
@@ -29,6 +30,9 @@ INITIAL_VECTOR_CANDIDATES = 60
 # Section-level candidates sent to the reranker (not "videos"). Higher = better recall but more tokens/latency;
 # partial ID lists are repaired via _repair_llm_ranked_ids. 60 caused frequent truncation before repair existed.
 LLM_RERANK_POOL_MAX = 45
+
+# Opening bumper present as the first timestamp on every course video; never useful as a search/related hit.
+EXCLUDED_SECTION_TITLES = frozenset({"Intro music + Quotes"})
 
 # Set VIDEO_SEARCH_DEBUG=1 to log candidate counts from dual retrieval merge.
 VIDEO_SEARCH_DEBUG = os.environ.get("VIDEO_SEARCH_DEBUG", "").lower() in ("1", "true", "yes")
@@ -47,6 +51,18 @@ openai_client = OpenAI(api_key=OPENAI_API_KEY) if OPENAI_API_KEY else None
 # -----------------------------
 client = chromadb.PersistentClient(path=CHROMA_DIR)
 collection = client.get_collection(name=COLLECTION_NAME)
+_related_collection = None
+
+
+def _get_related_collection():
+    """Lazy get-or-create for More like this segment embeddings."""
+    global _related_collection
+    if _related_collection is None:
+        _related_collection = client.get_or_create_collection(
+            name=RELATED_COLLECTION_NAME,
+            metadata={"hnsw:space": "cosine"},
+        )
+    return _related_collection
 
 
 def _is_transient_chroma_error(exc: BaseException) -> bool:
@@ -85,6 +101,28 @@ def chroma_query(**kwargs):
 def chroma_get(**kwargs):
     """collection.get with retries for transient disk I/O errors."""
     return collection.get(**kwargs)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient_chroma_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
+    reraise=True,
+)
+def related_chroma_query(**kwargs):
+    """Related-collection query with retries for transient disk I/O errors."""
+    return _get_related_collection().query(**kwargs)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient_chroma_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
+    reraise=True,
+)
+def related_chroma_get(**kwargs):
+    """Related-collection get with retries for transient disk I/O errors."""
+    return _get_related_collection().get(**kwargs)
 
 
 def enrich_user_query_llm(user_query: str):
@@ -127,12 +165,38 @@ def get_embedding(text):
 def embed_user_query(q):
     return get_embedding(q)
 
+def _is_excluded_section(meta: Dict) -> bool:
+    """True for sections that must never appear in search or More like this."""
+    title = str((meta or {}).get("section_title") or "").strip()
+    return title in EXCLUDED_SECTION_TITLES
+
+
+def _timestamp_section_where(extra: Dict = None) -> Dict:
+    """
+    Chroma where: playable timestamp sections, excluding known bumper titles.
+    """
+    clauses = [
+        {"type": "timestamp_section"},
+        {"section_title": {"$nin": list(EXCLUDED_SECTION_TITLES)}},
+    ]
+    if extra:
+        clauses.append(extra)
+    return {"$and": clauses} if len(clauses) > 1 else clauses[0]
+
+
 def chroma_vector_search(query: str, n_results=12):
+    """
+    Vector search over playable timestamp sections only.
+
+    Excludes video_context rows and the shared "Intro music + Quotes" bumper
+    so they never enter dual retrieval or LLM rerank.
+    """
     query_embedding = get_embedding(query)
     # Note: Chroma query() include does not support "ids" in many versions; dedupe uses metadata keys.
     return chroma_query(
         query_embeddings=[query_embedding],
         n_results=n_results,
+        where=_timestamp_section_where(),
         include=["documents", "metadatas", "distances"],
     )
 
@@ -437,6 +501,19 @@ def _embedding_as_list(embedding):
     return list(embedding)
 
 
+def _section_duration_seconds(meta: Dict):
+    """Parse section_duration_seconds from Chroma meta; None if missing/invalid."""
+    if not meta:
+        return None
+    raw = meta.get("section_duration_seconds")
+    if raw is None or raw == "":
+        return None
+    try:
+        return int(raw)
+    except (TypeError, ValueError):
+        return None
+
+
 def _card_from_meta(meta: Dict, document: str, distance: float, chroma_id: str = None) -> Dict:
     """Build a search-card-shaped result from Chroma metadata."""
     confidence = compute_confidence(distance, 0.0)
@@ -453,6 +530,9 @@ def _card_from_meta(meta: Dict, document: str, distance: float, chroma_id: str =
         "video_id": meta.get("video_id", ""),
         "confidence": confidence,
     }
+    duration = _section_duration_seconds(meta)
+    if duration is not None:
+        card["section_duration_seconds"] = duration
     if chroma_id:
         card["chroma_id"] = chroma_id
     return card
@@ -476,14 +556,30 @@ def _segment_focus_text(meta: Dict) -> str:
     return "\n".join(parts)
 
 
-def _related_query_embedding(seed: Dict) -> list:
+def _related_seed_embedding(seed: Dict) -> list:
     """
-    Embedding used to find related segments.
+    Embedding for More like this neighbor search.
 
-    Prefer a fresh OpenAI embedding of title+summary (query-time). Fall back to
-    the stored Chroma embedding if focus text is empty or embed fails.
-    Does not change stored vectors or /search behavior.
+    Prefer the precomputed vector in the related collection (same chroma id).
+    Fall back to a query-time title+summary embed, then the main stored embedding.
     """
+    chroma_id = seed.get("chroma_id")
+    if chroma_id:
+        try:
+            got = related_chroma_get(ids=[chroma_id], include=["embeddings"])
+            if got and got.get("ids"):
+                emb = _embedding_as_list(
+                    got["embeddings"][0] if got.get("embeddings") is not None else None
+                )
+                if emb is not None:
+                    return emb
+        except Exception as e:
+            print(
+                f"Warning: related-collection seed lookup failed ({e}); "
+                "falling back to query-time embed",
+                flush=True,
+            )
+
     stored = seed.get("embedding")
     focus = _segment_focus_text(seed.get("meta") or {})
     if not focus:
@@ -498,6 +594,28 @@ def _related_query_embedding(seed: Dict) -> list:
             flush=True,
         )
         return stored
+
+
+def _hydrate_cards_from_main(neighbor_ids, distances_by_id: Dict) -> List[Dict]:
+    """
+    Build cards from main-collection metadata for related neighbor ids.
+
+    Related collection is used for similarity only; display fields (including
+    section_duration_seconds) come from the main collection.
+    """
+    if not neighbor_ids:
+        return []
+    got = chroma_get(ids=list(neighbor_ids), include=["metadatas", "documents"])
+    if not got or not got.get("ids"):
+        return []
+    by_id = {}
+    for i, rid in enumerate(got["ids"]):
+        meta = (got["metadatas"][i] if got.get("metadatas") else {}) or {}
+        doc = (got["documents"][i] if got.get("documents") else "") or ""
+        dist = float(distances_by_id.get(rid, 1.0))
+        by_id[rid] = _card_from_meta(meta, doc, dist, chroma_id=rid)
+    # Preserve neighbor order from related query
+    return [by_id[rid] for rid in neighbor_ids if rid in by_id]
 
 
 def resolve_seed_section(video_id: str = None, timestamp: str = None, chroma_id: str = None) -> Dict:
@@ -590,12 +708,12 @@ def recommend_related(
     """
     Find topic-similar timestamp sections near a seed segment.
 
-    Preferred: pass video_id+timestamp or chroma_id. When a seed is resolved,
-    the neighbor query uses a **query-time** embedding of section_title +
-    section_summary (not the stored full embedding_text), so related stays
-    segment-focused. /search is unchanged.
+    Preferred: pass video_id+timestamp or chroma_id. Neighbor search uses the
+    precomputed title+summary embedding in the related collection (no OpenAI
+    call when the seed exists there). Card metadata (including duration) is
+    hydrated from the main collection. /search is unchanged.
 
-    Legacy: pass section_embedding directly (used as-is, no re-embed).
+    Legacy: pass section_embedding directly (used as-is against related collection).
 
     Returns {"seed": {...}, "results": [card, ...]} when resolved via id/timestamp,
     or a bare list of cards when only section_embedding is provided (legacy).
@@ -610,7 +728,7 @@ def recommend_related(
             timestamp=timestamp,
             chroma_id=chroma_id,
         )
-        embedding = _related_query_embedding(seed)
+        embedding = _related_seed_embedding(seed)
 
     if embedding is None:
         raise ValueError("section_embedding or seed identity is required")
@@ -621,41 +739,47 @@ def recommend_related(
 
     # Fetch extra neighbors so filters still leave top_k
     n_fetch = min(max(top_k * 8 + 10, 25), 80)
-    raw = chroma_query(
+    raw = related_chroma_query(
         query_embeddings=[embedding],
         n_results=n_fetch,
-        include=["documents", "metadatas", "distances"],
+        where={"section_title": {"$nin": list(EXCLUDED_SECTION_TITLES)}},
+        include=["metadatas", "distances"],
     )
 
-    results = []
-    if not raw or not raw.get("ids") or not raw["ids"][0]:
-        payload = {"seed": None, "results": []}
-        if seed:
-            payload["seed"] = {
-                "video_id": seed["meta"].get("video_id", ""),
-                "timestamp": seed["meta"].get("timestamp", ""),
-                "section_title": seed["meta"].get("section_title", ""),
-                "video_title": seed["meta"].get("video_title", ""),
-                "chroma_id": seed["chroma_id"],
-            }
-        return payload if seed else []
+    empty_payload = {"seed": None, "results": []}
+    if seed:
+        empty_payload["seed"] = {
+            "video_id": seed["meta"].get("video_id", ""),
+            "timestamp": seed["meta"].get("timestamp", ""),
+            "section_title": seed["meta"].get("section_title", ""),
+            "video_title": seed["meta"].get("video_title", ""),
+            "chroma_id": seed["chroma_id"],
+        }
 
+    if not raw or not raw.get("ids") or not raw["ids"][0]:
+        return empty_payload if seed else []
+
+    neighbor_ids = []
+    distances_by_id = {}
     for i, rid in enumerate(raw["ids"][0]):
         meta = (raw["metadatas"][0][i] if raw.get("metadatas") else {}) or {}
-        doc = (raw["documents"][0][i] if raw.get("documents") else "") or ""
         dist = float(raw["distances"][0][i]) if raw.get("distances") else 1.0
 
         if seed_chroma_id and rid == seed_chroma_id:
             continue
         if meta.get("type") and meta.get("type") != "timestamp_section":
             continue
+        if _is_excluded_section(meta):
+            continue
         if exclude_same_video and seed_video_id and meta.get("video_id") == seed_video_id:
             continue
 
-        results.append(_card_from_meta(meta, doc, dist, chroma_id=rid))
-        if len(results) >= top_k:
+        neighbor_ids.append(rid)
+        distances_by_id[rid] = dist
+        if len(neighbor_ids) >= top_k:
             break
 
+    results = _hydrate_cards_from_main(neighbor_ids, distances_by_id)
     results.sort(key=lambda x: x.get("confidence") or 0, reverse=True)
 
     if seed is None and section_embedding is not None:
@@ -663,13 +787,7 @@ def recommend_related(
         return results[:top_k]
 
     return {
-        "seed": {
-            "video_id": seed["meta"].get("video_id", ""),
-            "timestamp": seed["meta"].get("timestamp", ""),
-            "section_title": seed["meta"].get("section_title", ""),
-            "video_title": seed["meta"].get("video_title", ""),
-            "chroma_id": seed["chroma_id"],
-        },
+        "seed": empty_payload["seed"],
         "results": results[:top_k],
     }
 
@@ -688,6 +806,8 @@ def search_video_sections(user_query: str, top_k=3):
     out = []
     for item in reranked:
         meta = item["meta"]
+        if _is_excluded_section(meta):
+            continue
         keyword_boost = keyword_score(user_query, item["text"])
         confidence = compute_confidence(item["distance"], keyword_boost)
 
@@ -704,6 +824,9 @@ def search_video_sections(user_query: str, top_k=3):
             "video_id": meta.get("video_id", ""),
             "confidence": confidence,
         })
+        duration = _section_duration_seconds(meta)
+        if duration is not None:
+            out[-1]["section_duration_seconds"] = duration
 
     # 5 | Highest confidence first, then top K
     out.sort(key=lambda x: x.get("confidence") or 0, reverse=True)
