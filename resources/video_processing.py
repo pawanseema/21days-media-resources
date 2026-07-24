@@ -483,7 +483,7 @@ def clean_description(text: str) -> str:
     Removes boilerplate section and unwanted lines from YouTube video description.
     - Removes boilerplate section between 'Be ready for life-changing transformative experiences!' 
       and 'JUMP DIRECTLY TO A SECTION USING TIMESTAMPS BELOW'
-    - Filters out unwanted lines (URLs, uppercase DAY schedule chrome, etc.)
+    - Filters out unwanted lines (URLs, DAY/WEEK/Session schedule chrome, etc.)
     """
     # Step 1: Remove boilerplate section
     pattern = (
@@ -499,7 +499,8 @@ def clean_description(text: str) -> str:
     # Filter out unwanted lines:
     # - Lines beginning with URLs
     # - Lines beginning with specific text patterns
-    # - schedule chrome that starts with uppercase "DAY" (not prose containing "day")
+    # - schedule chrome starting with uppercase DAY/WEEK or "Session"
+    #   (not prose containing those words mid-sentence)
     # - or are entirely uppercase short titles
     for line in lines:
         if (
@@ -507,7 +508,7 @@ def clean_description(text: str) -> str:
             or re.search(r'https?://', line)  # Lines containing URL anywhere
             or line.startswith("Access recording of all previous sessions - ")
             or line.startswith("In order to join our mentor program, please fill out this form -")
-            or re.match(r"^DAY\b", line)  # e.g. "DAY 45 …", not "during the day…"
+            or re.match(r"^(?:DAY|WEEK|Session)\b", line)
             or line.isupper()
             or line.startswith("JUMP DIRECTLY TO A SECTION")
         ):

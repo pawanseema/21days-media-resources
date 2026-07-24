@@ -114,6 +114,15 @@ Day by day the attention becomes quieter.
 10:00 Schedule note
 DAY 45 starts at 8pm ET
 
+12:00 Week note
+WEEK 2 overview for mentors
+
+13:00 Session note
+Session 3 registration details
+
+14:00 Prose with session word
+A meditation session includes raising Kundalini.
+
 15:00 Closing
 Final thoughts.
 """
@@ -121,11 +130,17 @@ Final thoughts.
         self.assertIn("during the day", cleaned)
         self.assertIn("Day by day", cleaned)
         self.assertNotIn("DAY 45 starts", cleaned)
+        self.assertNotIn("WEEK 2 overview", cleaned)
+        self.assertNotIn("Session 3 registration", cleaned)
+        self.assertIn("A meditation session includes", cleaned)
         ts = parse_timestamps(cleaned)
         by_title = {s["section_title"]: s["section_summary"] for s in ts}
         self.assertIn("during the day", by_title["Introduction"])
         self.assertIn("Day by day", by_title["Guidance"])
-        self.assertEqual(by_title["Schedule note"], "")  # DAY line dropped; no other body
+        self.assertEqual(by_title["Schedule note"], "")
+        self.assertEqual(by_title["Week note"], "")
+        self.assertEqual(by_title["Session note"], "")
+        self.assertIn("meditation session", by_title["Prose with session word"])
 
 
 if __name__ == "__main__":
