@@ -323,7 +323,14 @@ def summarize(text, max_sentences=7):
 
 
 def build_embedding_text(row):
-    """Builds the textual context for embeddings based on record type."""
+    """
+    Builds the textual context for embeddings based on record type.
+
+    video_context keeps quote + hashtags (whole-video topic signal).
+    timestamp_section omits them so shared video chrome does not pull thin
+    intros into unrelated queries; quote/hashtags remain in metadata for UI.
+    Chakra and video title stay on sections for day/topic recall.
+    """
     # Format published_at for embedding (extract date part for better searchability)
     published_date = ""
     if row.get("published_at"):
@@ -343,15 +350,13 @@ def build_embedding_text(row):
             f"Quote: {row.get('quote', '')}\n"
             f"Hashtags: {row.get('hashtags', '')}"
         )
-    else:  # timestamp_section
+    else:  # timestamp_section — segment-focused; no video-level quote/hashtags
         return (
             f"Video: {row['video_title']}\n"
             f"Published: {published_date}\n"
             f"Section at {row['timestamp']} - {row['section_title']}\n"
             f"Summary: {row['section_summary']}\n"
-            f"Chakra: {row.get('chakra', '')}\n"
-            f"Quote: {row.get('quote', '')}\n"
-            f"Hashtags: {row.get('hashtags', '')}"
+            f"Chakra: {row.get('chakra', '')}"
         )
 
 @retry(stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
