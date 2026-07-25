@@ -905,10 +905,19 @@ def process_playlist(title):
 
 
 def write_csv(rows, filename):
-    if not rows: return
-    keys = rows[0].keys()
+    if not rows:
+        return
+    # Union of keys across rows: video_context lacks section_duration_seconds,
+    # timestamp rows may include it — DictWriter requires a stable fieldnames set.
+    keys = []
+    seen = set()
+    for row in rows:
+        for k in row.keys():
+            if k not in seen:
+                seen.add(k)
+                keys.append(k)
     with open(filename, "w", newline="", encoding="utf-8") as f:
-        w = csv.DictWriter(f, fieldnames=keys)
+        w = csv.DictWriter(f, fieldnames=keys, restval="")
         w.writeheader()
         w.writerows(rows)
     print(f"✅ Exported {len(rows)} rows to {filename}")
