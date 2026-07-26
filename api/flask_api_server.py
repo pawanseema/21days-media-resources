@@ -9,12 +9,30 @@ from search.video_search import search_video_sections, recommend_related
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
+from live_sessions import resolve_next_session
 
 app = Flask(__name__)
 
 # Get the project root directory
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 UI_DIR = os.path.join(PROJECT_ROOT, 'ui')
+
+# Flutter web (Chrome) calls this API cross-origin; without CORS the browser
+# blocks reading 200 responses even though Flask logs success.
+@app.after_request
+def add_cors_headers(response):
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "Content-Type, Accept, X-Admin-Key"
+    response.headers["Access-Control-Allow-Methods"] = "GET, POST, PUT, OPTIONS"
+    return response
+
+
+@app.before_request
+def handle_cors_preflight():
+    if request.method == "OPTIONS":
+        return ("", 204)
+    return None
+
 
 ADMIN_PROTECTED_ROUTES = {
     ("POST", "/api/resources/ingest"),
@@ -218,6 +236,24 @@ def api_search():
 def health_check():
     """Health check endpoint."""
     return jsonify({"status": "healthy"}), 200
+
+
+@app.route("/api/live/sessions", methods=["GET"])
+def api_live_sessions():
+    """
+    Current or next live meditation session for the 21Days app.
+
+    Returns YouTube live + Zoom meeting URLs from config/live_sessions.json
+    (override path with LIVE_SESSIONS_CONFIG).
+    """
+    try:
+        return jsonify(resolve_next_session()), 200
+    except Exception as e:
+        print(f"Error in live sessions endpoint: {e}", flush=True)
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e),
+        }), 500
 
 @app.route("/api/resources/ingest", methods=["POST"])
 def api_ingest_resource():
