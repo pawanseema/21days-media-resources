@@ -1,10 +1,16 @@
 {
-  "title": "Evening Collective Meditation",
-  "description": "Join the live Sahaja Yoga meditation. Arrive a few minutes early to settle your attention.",
-  "local_time": "19:00",
-  "timezone": "America/Los_Angeles",
-  "duration_minutes": 90,
-  "early_join_minutes": 5,
-  "youtube_live_url": "https://www.youtube.com/@SahajaYogaMeditation/live",
-  "zoom_meeting_url": "https://zoom.us/j/placeholder"
+  "zoom_meeting_url": "https://us06web.zoom.us/j/2121217171",
+  "upcoming_within_hours": 24,
+  "channels": [
+    {
+      "id": "UCa62U-SKmz4ushFzRA0pYTA",
+      "title": "End the Day in the Silence of Your Spirit",
+      "handle": "@endthedayinthesilenceofyou51"
+    },
+    {
+      "id": "UCIXjmjecxu7_LVAMCd9063w",
+      "title": "Sahaja Yoga Meditation USA",
+      "handle": "@SahajaYogaMeditationUSA"
+    }
+  ]
 }

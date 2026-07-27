@@ -9,7 +9,7 @@ from search.video_search import search_video_sections, recommend_related
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
-from live_sessions import resolve_next_session
+from api.live_sessions import resolve_next_session
 
 app = Flask(__name__)
 
@@ -241,9 +241,11 @@ def health_check():
 @app.route("/api/live/sessions", methods=["GET"])
 def api_live_sessions():
     """
-    Current or next live meditation session for the 21Days app.
+    Live or next upcoming YouTube meditation session for the 21Days app.
 
-    Returns YouTube live + Zoom meeting URLs from config/live_sessions.json
+    Checks configured channels for an active live stream; otherwise returns the
+    soonest upcoming scheduled live within 24h (wall time). session is null when
+    neither is found. Zoom URL and channel metadata come from config/live_sessions.json
     (override path with LIVE_SESSIONS_CONFIG).
     """
     try:
