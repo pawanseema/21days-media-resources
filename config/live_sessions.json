@@ -1,6 +1,7 @@
 {
   "zoom_meeting_url": "https://us06web.zoom.us/j/2121217171",
-  "upcoming_within_hours": 24,
+  "upcoming_within_hours": 72,
+  "recent_within_hours": 72,
   "channels": [
     {
       "id": "UCa62U-SKmz4ushFzRA0pYTA",

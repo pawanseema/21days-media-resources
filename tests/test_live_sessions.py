@@ -22,7 +22,7 @@ from api.live_sessions import resolve_next_session
 def _cfg(path: Path) -> Path:
     data = {
         "zoom_meeting_url": "https://us06web.zoom.us/j/2121217171",
-        "upcoming_within_hours": 24,
+        "upcoming_within_hours": 72,
         "channels": [
             {
                 "id": "UCchanA",
@@ -171,10 +171,10 @@ class LiveSessionsTests(unittest.TestCase):
         )
         self.assertIn("hqdefault.jpg", payload["session"]["youtube_thumbnail_url"])
 
-    def test_picks_soonest_upcoming_within_24h(self):
+    def test_picks_soonest_upcoming_within_72h(self):
         later = (self.now + timedelta(hours=6)).strftime("%Y-%m-%dT%H:%M:%SZ")
         sooner = (self.now + timedelta(hours=2)).strftime("%Y-%m-%dT%H:%M:%SZ")
-        too_far = (self.now + timedelta(hours=30)).strftime("%Y-%m-%dT%H:%M:%SZ")
+        too_far = (self.now + timedelta(hours=80)).strftime("%Y-%m-%dT%H:%M:%SZ")
         yt = FakeYouTube(
             live_by_channel={},
             upcoming_by_channel={

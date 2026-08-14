@@ -9,7 +9,8 @@ from search.video_search import search_video_sections, recommend_related
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
-from api.live_sessions import resolve_next_session
+from api.live_sessions import resolve_next_session, resolve_recent_recordings
+from api.year_recordings import resolve_year_recordings
 
 app = Flask(__name__)
 
@@ -244,7 +245,7 @@ def api_live_sessions():
     Live or next upcoming YouTube meditation session for the 21Days app.
 
     Checks configured channels for an active live stream; otherwise returns the
-    soonest upcoming scheduled live within 24h (wall time). session is null when
+    soonest upcoming scheduled live within 72h (wall time). session is null when
     neither is found. Zoom URL and channel metadata come from config/live_sessions.json
     (override path with LIVE_SESSIONS_CONFIG).
     """
@@ -252,10 +253,62 @@ def api_live_sessions():
         return jsonify(resolve_next_session()), 200
     except Exception as e:
         print(f"Error in live sessions endpoint: {e}", flush=True)
+        msg = str(e)
+        # Transient local bind / routing (common on macOS talking to Google APIs)
+        transient = (
+            "Can't assign requested address" in msg
+            or "Errno 49" in msg
+            or getattr(e, "errno", None) == 49
+        )
         return jsonify({
-            "error": "Internal server error",
-            "message": str(e),
-        }), 500
+            "error": "Service temporarily unavailable" if transient else "Internal server error",
+            "message": msg,
+        }), 503 if transient else 500
+
+
+@app.route("/api/live/recent", methods=["GET"])
+def api_live_recent():
+    """
+    Latest completed livestream per configured channel (within ~72h).
+
+    At most one item per channel. Used by the mobile Live tab recent section.
+    """
+    try:
+        return jsonify(resolve_recent_recordings()), 200
+    except Exception as e:
+        print(f"Error in live recent endpoint: {e}", flush=True)
+        msg = str(e)
+        transient = (
+            "Can't assign requested address" in msg
+            or "Errno 49" in msg
+            or getattr(e, "errno", None) == 49
+        )
+        return jsonify({
+            "error": "Service temporarily unavailable" if transient else "Internal server error",
+            "message": msg,
+        }), 503 if transient else 500
+
+
+@app.route("/api/recordings", methods=["GET"])
+def api_recordings():
+    """
+    Latest year playlist sliced into configured sessions (oldest videos first).
+    """
+    try:
+        return jsonify(resolve_year_recordings()), 200
+    except Exception as e:
+        print(f"Error in recordings endpoint: {e}", flush=True)
+        msg = str(e)
+        transient = (
+            "Can't assign requested address" in msg
+            or "Errno 49" in msg
+            or getattr(e, "errno", None) == 49
+        )
+        return jsonify({
+            "error": "Service temporarily unavailable" if transient else "Internal server error",
+            "message": msg,
+        }), 503 if transient else 500
+
 
 @app.route("/api/resources/ingest", methods=["POST"])
 def api_ingest_resource():

@@ -1,0 +1,15 @@
+{
+  "years": [
+    {
+      "year": 2026,
+      "title": "21 Days 2026",
+      "playlist_id": "PL2yoRtZOeeuHt7ZbJ1DCK4fDstdy6CxII",
+      "sessions": [
+        { "id": "2026-s1", "label": "Session 1", "video_count": 21 },
+        { "id": "2026-s2", "label": "Session 2", "video_count": 21 },
+        { "id": "2026-s3a", "label": "Session 3A", "video_count": 11 },
+        { "id": "2026-s3b", "label": "Session 3B", "video_count": 10 }
+      ]
+    }
+  ]
+}
