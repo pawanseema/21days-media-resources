@@ -10,7 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import socket
+import ssl
 import sys
+import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -29,13 +32,25 @@ DEFAULT_WITHIN_HOURS = 72
 DEFAULT_RECENT_WITHIN_HOURS = 72
 CACHE_TTL_SECONDS = 45
 RECENT_CACHE_TTL_SECONDS = 120
+YOUTUBE_HTTP_TIMEOUT_SECONDS = 12
 
-_youtube_client = None
+_tls = threading.local()
 _cache: Dict[str, Any] = {"expires_at": 0.0, "payload": None}
 _recent_cache: Dict[str, Any] = {"expires_at": 0.0, "payload": None}
 
 # Transient local bind / routing failures seen on macOS when contacting Google APIs
-_TRANSIENT_ERRNOS = {48, 49, 51, 60, 65}  # addr in use, can't assign, unreachable, timeout, no route
+_TRANSIENT_ERRNOS = {48, 49, 51, 54, 60, 65}  # addr in use, can't assign, reset, timeout, no route
+_TRANSIENT_MESSAGE_NEEDLES = (
+    "can't assign requested address",
+    "errno 49",
+    "timed out",
+    "timeout",
+    "record layer failure",
+    "ssl syscall error",
+    "connection reset",
+    "broken pipe",
+    "temporarily unavailable",
+)
 
 
 def _load_config(path: Optional[Path] = None) -> Dict[str, Any]:
@@ -50,20 +65,46 @@ def _load_config(path: Optional[Path] = None) -> Dict[str, Any]:
 
 
 def _reset_youtube_client() -> None:
-    global _youtube_client
-    _youtube_client = None
+    _tls.youtube_client = None
 
 
 def _get_youtube():
-    global _youtube_client
-    if _youtube_client is None:
+    """
+    Per-thread YouTube client.
+
+    google-api-python-client / httplib2 are not thread-safe. Sharing one client
+    across Flask worker threads causes SSL record-layer failures and timeouts
+    when Live, recent, and recordings hit YouTube at once.
+    """
+    client = getattr(_tls, "youtube_client", None)
+    if client is None:
+        import httplib2
         from googleapiclient.discovery import build
 
         key = load_yt_api_key()
         if not key:
             raise ValueError("YouTube API key is not configured")
-        _youtube_client = build("youtube", "v3", developerKey=key)
-    return _youtube_client
+        http = httplib2.Http(timeout=YOUTUBE_HTTP_TIMEOUT_SECONDS)
+        client = build(
+            "youtube",
+            "v3",
+            developerKey=key,
+            http=http,
+            cache_discovery=False,
+        )
+        _tls.youtube_client = client
+    return client
+
+
+def _is_transient_http_error(exc: BaseException) -> bool:
+    try:
+        from googleapiclient.errors import HttpError
+    except ImportError:
+        return False
+    if not isinstance(exc, HttpError):
+        return False
+    status = getattr(getattr(exc, "resp", None), "status", None)
+    return status in {429, 500, 502, 503, 504}
 
 
 def _is_transient_network_error(exc: BaseException) -> bool:
@@ -71,16 +112,25 @@ def _is_transient_network_error(exc: BaseException) -> bool:
     seen: set[int] = set()
     while cur is not None and id(cur) not in seen:
         seen.add(id(cur))
+        if isinstance(cur, (TimeoutError, socket.timeout, ssl.SSLError)):
+            return True
+        if _is_transient_http_error(cur):
+            return True
         if isinstance(cur, OSError) and getattr(cur, "errno", None) in _TRANSIENT_ERRNOS:
             return True
         msg = str(cur).lower()
-        if "can't assign requested address" in msg or "errno 49" in msg:
+        if any(needle in msg for needle in _TRANSIENT_MESSAGE_NEEDLES):
             return True
         cur = cur.__cause__ or cur.__context__
     return False
 
 
-def _call_with_network_retry(fn: Callable[[], Any], attempts: int = 3) -> Any:
+def is_transient_youtube_error(exc: BaseException) -> bool:
+    """Public alias used by Flask to map YouTube blips to HTTP 503."""
+    return _is_transient_network_error(exc)
+
+
+def _call_with_network_retry(fn: Callable[[], Any], attempts: int = 4) -> Any:
     """Retry YouTube HTTP calls that fail with transient local network errors."""
     last: Optional[BaseException] = None
     for attempt in range(attempts):
@@ -91,7 +141,7 @@ def _call_with_network_retry(fn: Callable[[], Any], attempts: int = 3) -> Any:
             if not _is_transient_network_error(exc) or attempt + 1 >= attempts:
                 raise
             _reset_youtube_client()
-            time.sleep(0.25 * (attempt + 1))
+            time.sleep(0.4 * (2 ** attempt))
     assert last is not None
     raise last
 

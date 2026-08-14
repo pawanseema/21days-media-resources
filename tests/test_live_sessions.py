@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import json
 import os
+import ssl
 import sys
 import tempfile
 import unittest
@@ -217,6 +218,21 @@ class LiveSessionsTests(unittest.TestCase):
             use_cache=False,
         )
         self.assertIsNone(payload["session"])
+
+
+class TransientYoutubeErrorTests(unittest.TestCase):
+    def test_timeout_and_ssl_are_retryable(self):
+        from api.live_sessions import is_transient_youtube_error
+
+        self.assertTrue(
+            is_transient_youtube_error(TimeoutError("The read operation timed out"))
+        )
+        self.assertTrue(is_transient_youtube_error(ssl.SSLError("record layer failure")))
+        ssl_msg = Exception(
+            "[SSL: RECORD_LAYER_FAILURE] record layer failure (_ssl.c:2713)"
+        )
+        self.assertTrue(is_transient_youtube_error(ssl_msg))
+        self.assertFalse(is_transient_youtube_error(ValueError("bad playlist")))
 
 
 if __name__ == "__main__":

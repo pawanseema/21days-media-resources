@@ -9,7 +9,11 @@ from search.video_search import search_video_sections, recommend_related
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
-from api.live_sessions import resolve_next_session, resolve_recent_recordings
+from api.live_sessions import (
+    is_transient_youtube_error,
+    resolve_next_session,
+    resolve_recent_recordings,
+)
 from api.year_recordings import resolve_year_recordings
 
 app = Flask(__name__)
@@ -53,6 +57,15 @@ def _env_flag(name, default=False):
     if raw is None:
         return default
     return raw.strip().lower() in ("1", "true", "yes", "on")
+
+
+def _youtube_error_response(exc):
+    """Map YouTube timeouts / SSL blips to 503 so clients can retry."""
+    transient = is_transient_youtube_error(exc)
+    return jsonify({
+        "error": "Service temporarily unavailable" if transient else "Internal server error",
+        "message": str(exc),
+    }), 503 if transient else 500
 
 
 def _chroma_writes_enabled():
@@ -253,17 +266,7 @@ def api_live_sessions():
         return jsonify(resolve_next_session()), 200
     except Exception as e:
         print(f"Error in live sessions endpoint: {e}", flush=True)
-        msg = str(e)
-        # Transient local bind / routing (common on macOS talking to Google APIs)
-        transient = (
-            "Can't assign requested address" in msg
-            or "Errno 49" in msg
-            or getattr(e, "errno", None) == 49
-        )
-        return jsonify({
-            "error": "Service temporarily unavailable" if transient else "Internal server error",
-            "message": msg,
-        }), 503 if transient else 500
+        return _youtube_error_response(e)
 
 
 @app.route("/api/live/recent", methods=["GET"])
@@ -277,16 +280,7 @@ def api_live_recent():
         return jsonify(resolve_recent_recordings()), 200
     except Exception as e:
         print(f"Error in live recent endpoint: {e}", flush=True)
-        msg = str(e)
-        transient = (
-            "Can't assign requested address" in msg
-            or "Errno 49" in msg
-            or getattr(e, "errno", None) == 49
-        )
-        return jsonify({
-            "error": "Service temporarily unavailable" if transient else "Internal server error",
-            "message": msg,
-        }), 503 if transient else 500
+        return _youtube_error_response(e)
 
 
 @app.route("/api/recordings", methods=["GET"])
@@ -298,16 +292,7 @@ def api_recordings():
         return jsonify(resolve_year_recordings()), 200
     except Exception as e:
         print(f"Error in recordings endpoint: {e}", flush=True)
-        msg = str(e)
-        transient = (
-            "Can't assign requested address" in msg
-            or "Errno 49" in msg
-            or getattr(e, "errno", None) == 49
-        )
-        return jsonify({
-            "error": "Service temporarily unavailable" if transient else "Internal server error",
-            "message": msg,
-        }), 503 if transient else 500
+        return _youtube_error_response(e)
 
 
 @app.route("/api/resources/ingest", methods=["POST"])
