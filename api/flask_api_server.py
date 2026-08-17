@@ -5,7 +5,7 @@ from flask import Flask, request, jsonify, send_from_directory
 # Add parent directory to path to import from search module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from search.video_search import search_video_sections, recommend_related
+from search.video_search import search_video_sections, recommend_related, list_video_chapters
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
@@ -197,6 +197,26 @@ def api_videos_related():
             "error": "Internal server error",
             "message": str(e),
         }), 500
+
+
+@app.route("/api/videos/<video_id>/chapters", methods=["GET"])
+def api_video_chapters(video_id):
+    """
+    Timestamp chapters for one video from Chroma (timestamp_section rows).
+
+    Returns empty chapters[] when the video has not been ingested. No YouTube calls.
+    """
+    try:
+        return jsonify(list_video_chapters(video_id)), 200
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"Error in video chapters endpoint: {e}", flush=True)
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e),
+        }), 500
+
 
 @app.route("/search", methods=["POST"])
 def api_search():

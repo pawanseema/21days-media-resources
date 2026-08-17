@@ -5,7 +5,7 @@ from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 import json
 import re
-from typing import List, Dict
+from typing import Any, List, Dict
 from collections import defaultdict
 
 # Add project root to Python path for config import
@@ -32,7 +32,12 @@ INITIAL_VECTOR_CANDIDATES = 60
 LLM_RERANK_POOL_MAX = 45
 
 # Opening bumper present as the first timestamp on every course video; never useful as a search/related hit.
-EXCLUDED_SECTION_TITLES = frozenset({"Intro music + Quotes"})
+EXCLUDED_SECTION_TITLES = frozenset({
+    "Intro music + Quotes",
+    "Intro Music + Quote",
+    "Intro music + Quote",
+    "Intro Music + Quotes",
+})
 
 # Set VIDEO_SEARCH_DEBUG=1 to log candidate counts from dual retrieval merge.
 VIDEO_SEARCH_DEBUG = os.environ.get("VIDEO_SEARCH_DEBUG", "").lower() in ("1", "true", "yes")
@@ -166,9 +171,17 @@ def embed_user_query(q):
     return get_embedding(q)
 
 def _is_excluded_section(meta: Dict) -> bool:
-    """True for sections that must never appear in search or More like this."""
+    """True for sections that must never appear in search, related, or chapters."""
     title = str((meta or {}).get("section_title") or "").strip()
-    return title in EXCLUDED_SECTION_TITLES
+    if not title:
+        return False
+    if title in EXCLUDED_SECTION_TITLES:
+        return True
+    lower = title.casefold()
+    if lower in {t.casefold() for t in EXCLUDED_SECTION_TITLES}:
+        return True
+    # Bumper variants that start the same way in descriptions
+    return lower.startswith("intro music")
 
 
 def _timestamp_section_where(extra: Dict = None) -> Dict:
@@ -491,6 +504,85 @@ def _normalize_timestamp(ts: str) -> str:
     if len(nums) == 3:
         return f"{nums[0]}:{nums[1]:02d}:{nums[2]:02d}"
     return text
+
+
+def _timestamp_to_seconds(ts: str) -> int:
+    """Convert `M:SS` / `H:MM:SS` to seconds; 0 if unparseable."""
+    text = str(ts or "").strip()
+    if not text:
+        return 0
+    parts = text.split(":")
+    try:
+        nums = [int(p) for p in parts]
+    except ValueError:
+        return 0
+    if len(nums) == 3:
+        return nums[0] * 3600 + nums[1] * 60 + nums[2]
+    if len(nums) == 2:
+        return nums[0] * 60 + nums[1]
+    if len(nums) == 1:
+        return nums[0]
+    return 0
+
+
+_CHAPTERS_CACHE_TTL_SECONDS = 180
+_chapters_cache: Dict[str, Any] = {}
+
+
+def list_video_chapters(video_id: str, use_cache: bool = True) -> Dict[str, Any]:
+    """
+    Chroma timestamp_section rows for one video, oldest first.
+
+    Returns {"video_id", "chapters": [{"timestamp", "section_title", "start_seconds"}]}.
+    Empty chapters when the video is not ingested.
+    """
+    import time
+
+    vid = (video_id or "").strip()
+    if not vid:
+        raise ValueError("video_id is required")
+
+    if use_cache:
+        cached = _chapters_cache.get(vid)
+        if cached is not None and time.time() < float(cached.get("expires_at") or 0):
+            return dict(cached["payload"])
+
+    got = chroma_get(
+        where={
+            "$and": [
+                {"video_id": vid},
+                {"type": "timestamp_section"},
+            ]
+        },
+        include=["metadatas"],
+    )
+
+    chapters: List[Dict[str, Any]] = []
+    for meta in got.get("metadatas") or []:
+        meta = meta or {}
+        if _is_excluded_section(meta):
+            continue
+        ts = str(meta.get("timestamp") or "").strip()
+        title = str(meta.get("section_title") or "").strip()
+        if not ts:
+            continue
+        chapters.append(
+            {
+                "timestamp": ts,
+                "section_title": title or "Section",
+                "start_seconds": _timestamp_to_seconds(ts),
+            }
+        )
+
+    chapters.sort(key=lambda c: c["start_seconds"])
+
+    payload = {"video_id": vid, "chapters": chapters}
+    if use_cache:
+        _chapters_cache[vid] = {
+            "expires_at": time.time() + _CHAPTERS_CACHE_TTL_SECONDS,
+            "payload": payload,
+        }
+    return payload
 
 
 def _embedding_as_list(embedding):
