@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>21Days — Live</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,600;9..144,700&family=Nunito:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/ui/css/tokens.css">
+  <link rel="stylesheet" href="/ui/css/shell.css">
+  <link rel="stylesheet" href="/ui/css/cards.css">
+  <link rel="stylesheet" href="/ui/css/player.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="title-bar">
+      <div class="header-portrait">
+        <img
+          src="/ui/Shri-Mataji-round-blue-shadow-white-name.png"
+          alt="Shri Mataji"
+          width="120"
+          height="120"
+        >
+      </div>
+      <div class="header-text">
+        <h1>Let's Meditate  For 21 Days</h1>
+        <p id="headerSubtitle">Live and upcoming sessions</p>
+      </div>
+      <a
+        class="header-course-link"
+        href="https://us.sahajayoga.org/21days/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >About 21-Day Course</a>
+    </div>
+    <nav class="main-nav" id="mainNav" aria-label="Main">
+      <a href="#/live" data-tab="live">Live</a>
+      <a href="#/explore" data-tab="explore">Explore</a>
+      <a href="#/recordings" data-tab="recordings">Recordings</a>
+      <a href="#/wisdom" data-tab="wisdom">Wisdom</a>
+    </nav>
+  </header>
+
+  <main class="app-main">
+    <section id="panel-live" class="tab-panel" hidden></section>
+
+    <section id="panel-explore" class="tab-panel" hidden>
+      <div class="explore-toggle" role="tablist">
+        <button type="button" id="btnVideos" class="active">Videos</button>
+        <button type="button" id="btnHandouts">Handouts</button>
+      </div>
+      <div class="search-field">
+        <span class="search-icon" aria-hidden="true">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="7"></circle>
+            <path d="M20 20l-3.5-3.5"></path>
+          </svg>
+        </span>
+        <input id="query" type="search" autocomplete="off" placeholder="Type your query to search meditation videos…">
+        <button type="button" class="icon-btn" id="clearQuery" hidden aria-label="Clear search">&times;</button>
+      </div>
+      <div class="example-chips" id="examplePrompts" aria-label="Example searches">
+        <div id="examplePromptChips"></div>
+      </div>
+      <div class="related-banner" id="relatedBanner">
+        <div id="relatedBannerText"></div>
+        <button type="button" class="btn secondary" id="backToSearchBtn">← Back to Search Result</button>
+      </div>
+      <div class="inline-error" id="exploreError" hidden></div>
+      <div class="panel-status" id="exploreLoading" hidden>
+        <div class="spinner"></div>
+        <p id="exploreLoadingText">Searching for relevant videos…</p>
+      </div>
+      <div class="panel-status" id="exploreNoResults" hidden>
+        <p>No results found. Try a different search query.</p>
+      </div>
+      <div class="results-grid" id="exploreResults"></div>
+    </section>
+
+    <section id="panel-recordings" class="tab-panel" hidden></section>
+    <section id="panel-wisdom" class="tab-panel" hidden></section>
+  </main>
+
+  <div class="modal" id="videoModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div class="modal-title" id="modalTitle"></div>
+        <button type="button" class="modal-close" id="playerClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="player-frame" id="playerFrame"></div>
+      <div class="player-meta">
+        <h2 id="playerVideoTitle"></h2>
+        <p class="muted" id="playerSectionTitle"></p>
+        <h3 class="chapter-heading" id="chapterHeading" hidden>Jump directly to a section</h3>
+        <div class="chapter-list" id="chapterList"></div>
+        <p style="margin:14px 0 0">
+          <a id="openYoutube" href="#" target="_blank" rel="noopener noreferrer">Open on YouTube</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal wisdom-modal" id="wisdomModal">
+    <div class="modal-dialog">
+      <div class="modal-header">
+        <div>
+          <div class="modal-title" id="wisdomModalTitle"></div>
+          <div class="muted" id="wisdomModalSubtitle"></div>
+        </div>
+        <button type="button" class="modal-close" id="wisdomClose" aria-label="Close">&times;</button>
+      </div>
+      <div class="wisdom-body" id="wisdomModalBody"></div>
+    </div>
+  </div>
+
+  <script type="module" src="/ui/js/main.js"></script>
+</body>
+</html>

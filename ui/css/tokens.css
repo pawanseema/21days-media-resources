@@ -1,0 +1,22 @@
+:root {
+  --page-bg: #8dc9fa;
+  --chrome-bg: #ffe58a;
+  --chrome-fg: #133b5b;
+  --ink: #133b5b;
+  --muted-ink: #3d5a73;
+  --surface: #fffff8;
+  --mist: #d6eaf8;
+  --accent: #e8b020;
+  --accent-soft: #fff8e0;
+  --soft-teal: #4a8fbf;
+  --selected-bg: #4a8fbf;
+  --selected-fg: #ffffff;
+  --danger: #e25555;
+  --live-red: #ff4d4f;
+  --shadow: 0 8px 24px rgba(19, 59, 91, 0.12);
+  --radius: 16px;
+  --font-display: "Fraunces", Georgia, serif;
+  --font-body: "Nunito", "Segoe UI", sans-serif;
+  --nav-bg: #fff8e0;
+  --title-ink: #133b5b;
+}

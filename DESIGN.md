@@ -24,7 +24,7 @@
 This project is a **Sahaja Yoga–oriented discovery stack** that:
 
 - **Ingests** YouTube playlist videos: cleans descriptions, extracts video-level and timestamp-level content, embeds with OpenAI, and stores vectors in **ChromaDB**.
-- **Searches** those sections with **semantic retrieval + LLM reranking** (OpenAI), exposed via a **Flask** API and a single-page **HTML** UI.
+- **Searches** those sections with **semantic retrieval + LLM reranking** (OpenAI), exposed via a **Flask** API and a 4-tab **HTML** UI.
 - **Ingests and searches** separate **handout/resource** documents in a **second ChromaDB collection**, with REST endpoints and dedicated UI pages.
 
 ### Key Features
@@ -44,7 +44,15 @@ This project is a **Sahaja Yoga–oriented discovery stack** that:
 ```
 21days-media-resources/
 ├── api/
-│   └── flask_api_server.py    # HTTP API + static UI routes
+│   ├── flask_api_server.py    # HTTP API + static UI routes
+│   ├── live_sessions.py
+│   ├── year_recordings.py
+│   └── wisdom_topics.py       # GET /api/wisdom/topics
+├── config/
+│   ├── live_sessions.json
+│   ├── year_playlists.json
+│   └── wisdom_topics.json     # Shared Wisdom tab content
+
 ├── resources/
 │   ├── video_processing.py    # YouTube → Chroma (videos)
 │   ├── browse_videos.py       # CLI: browse / stats / delete-video
@@ -56,11 +64,12 @@ This project is a **Sahaja Yoga–oriented discovery stack** that:
 │   ├── postprocess.py         # Fused scores, explanations, helpers
 │   └── hybrid_search.py       # Optional / experimental
 ├── ui/
-│   ├── search.html            # Main app: video + handout search
-│   ├── resource_form.html     # Add resource
-│   ├── resource_update.html   # Update resource by ID
-│   ├── resource_search.html   # Standalone resource search page
-│   └── …                      # Static assets (e.g. images) via /ui/…
+│   ├── app.html               # 4-tab app (Live, Explore, Recordings, Wisdom)
+│   ├── css/ + js/             # Vanilla ES modules + shared styles
+│   ├── search.html            # Redirects to /#/explore
+│   ├── resource_form.html     # Add resource (admin)
+│   ├── resource_update.html   # Update resource by ID (admin)
+│   └── …                      # Static assets via /ui/…
 ├── config.py                  # Paths + API key loaders
 ├── requirements.txt
 ├── sahajyoga_recent5_audit.csv   # Written by video_processing (audit)
@@ -114,7 +123,7 @@ This project is a **Sahaja Yoga–oriented discovery stack** that:
          │
          ▼
 ┌─────────────────────────────────────┐
-│  ui/search.html + other HTML pages   │
+│  ui/app.html + css/ + js/            │
 └─────────────────────────────────────┘
 ```
 
@@ -313,10 +322,15 @@ Uses **fused** scoring from `postprocess.py` (embedding + keyword + rank positio
 
 | Method | Path | Purpose |
 |--------|------|---------|
-| GET | `/` | Main UI (`search.html`) |
-| GET | `/ui/<path>` | Static assets under `ui/` |
+| GET | `/` | Main UI (`app.html`, hash routes `#/live` … `#/wisdom`) |
+| GET | `/ui/<path>` | Static assets under `ui/` (`css/`, `js/`, images) |
 | POST | `/search` | Video section search |
 | GET | `/health` | Health check |
+| GET | `/api/live/sessions` | Current or next live session |
+| GET | `/api/live/recent` | Latest completed livestream per channel (~72h) |
+| GET | `/api/recordings` | Year playlist sliced into sessions |
+| GET | `/api/wisdom/topics` | Shared Wisdom tab topics |
+| GET | `/api/videos/<video_id>/chapters` | Chroma chapters for one video |
 | POST | `/api/videos/ingest` | Ingest one video by `video_id` (optional overwrite) |
 | POST | `/api/resources/ingest` | Create resource |
 | POST | `/api/resources/search` | Search resources |
@@ -324,7 +338,7 @@ Uses **fused** scoring from `postprocess.py` (embedding + keyword + rank positio
 | PUT | `/api/resources/<id>` | Update resource |
 | GET | `/resource-form`, `/resource_form.html` | Add resource UI |
 | GET | `/resource-update`, `/resource_update.html` | Update resource UI |
-| GET | `/resources`, `/resource-search`, … | Resource search UI |
+| GET | `/resources`, `/resource-search`, … | Redirect to `/#/explore` |
 
 **Errors:** 400 for bad JSON / validation; 409 duplicate `download_url`; 404 missing resource; 500 with message on unexpected failures.
 
@@ -332,10 +346,14 @@ Uses **fused** scoring from `postprocess.py` (embedding + keyword + rank positio
 
 ## Frontend
 
-- **`ui/search.html`** — Centered title bar, hero row (image + search panel), video vs handout modes, mentor link, results cards, YouTube modal
-- **`resource_form.html`**, **`resource_update.html`**, **`resource_search.html`** — Resource workflows
+- **`ui/app.html`** — Open-access 4-tab app matching mobile: **Live**, **Explore**, **Recordings**, **Wisdom**. Hash routes (`#/live`, `#/explore`, `#/recordings`, `#/wisdom`). Yellow title bar (dynamic subtitle) + **About 21-Day Course** link; desktop top nav under the title; mobile bottom nav. No login, no theme picker, no live reminders.
+- **Explore** — Videos / Handouts segmented control, example chips, semantic search, related clips, YouTube modal with chapters (`GET /api/videos/<id>/chapters`).
+- **Live / Recordings** — Same public APIs as the mobile app; in-page player; Zoom opens in a new tab.
+- **Wisdom** — `GET /api/wisdom/topics` from `config/wisdom_topics.json` (shared with mobile).
+- **`resource_form.html`**, **`resource_update.html`** — Admin ingest/update (writes-gated).
+- **`search.html`** — Redirects to `/#/explore`.
 
-Relative URLs (`/search`, `/api/resources/search`) require the Flask server (not `file://`).
+Relative API URLs require the Flask server (not `file://`). Vanilla ES modules; no bundler.
 
 ---
 
@@ -382,6 +400,9 @@ Implemented with OpenAI chat models and structured prompts in `video_search.py` 
 | Chroma directory | `config.get_chroma_dir()` → `resources/chroma_free_store` |
 | Playlists / channel / batch / order | `resources/video_processing.py` constants |
 | Flask port | `api/flask_api_server.py` → `5005` |
+| Live sessions | `config/live_sessions.json` |
+| Year playlists | `config/year_playlists.json` |
+| Wisdom topics | `config/wisdom_topics.json` |
 
 ---
 

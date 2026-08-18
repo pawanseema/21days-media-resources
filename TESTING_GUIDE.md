@@ -282,14 +282,13 @@ curl -X POST http://localhost:5005/search \
 The UI calls relative URLs (`/search`, `/api/resources/search`). **Use the Flask app**, not `file://`.
 
 1. Start Flask (Step 5).
-2. Open **`http://localhost:5005/`** (main search UI).
-3. Try **Videos** vs **Search Handouts** toggles.
-4. Optional pages:
+2. Open **`http://localhost:5005/`** (4-tab app; defaults to `#/live`).
+3. Tabs: **Live**, **Explore**, **Recordings**, **Wisdom**. Explore has Videos vs Handouts.
+4. Optional admin pages:
    - `http://localhost:5005/resource-form` — add resource  
    - `http://localhost:5005/resource-update` — update by resource id  
-   - `http://localhost:5005/resources` — resource search page  
 
-Static assets (e.g. images under `ui/`) are served at `/ui/<filename>`.
+Static assets (CSS, JS, images under `ui/`) are served at `/ui/<filename>`.
 
 ---
 

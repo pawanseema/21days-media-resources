@@ -181,24 +181,26 @@ def _search_channel_broadcasts(
     channel_id: str,
     event_type: str,
     max_results: int = 5,
+    published_after: Optional[datetime] = None,
 ) -> List[Dict[str, Any]]:
     """
     Search a channel for live, upcoming, or completed broadcasts.
 
     event_type: "live" | "upcoming" | "completed"
     """
-    res = (
-        youtube.search()
-        .list(
-            part="snippet",
-            channelId=channel_id,
-            type="video",
-            eventType=event_type,
-            order="date",
-            maxResults=max_results,
+    kwargs: Dict[str, Any] = {
+        "part": "snippet",
+        "channelId": channel_id,
+        "type": "video",
+        "eventType": event_type,
+        "order": "date",
+        "maxResults": max_results,
+    }
+    if published_after is not None:
+        kwargs["publishedAfter"] = (
+            published_after.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
         )
-        .execute()
-    )
+    res = youtube.search().list(**kwargs).execute()
     out = []
     for item in res.get("items") or []:
         vid = ((item.get("id") or {}).get("videoId") or "").strip()
@@ -240,9 +242,8 @@ def _enrich_live_details(youtube, rows: List[Dict[str, Any]]) -> List[Dict[str, 
             _parse_yt_time(live.get("actualStartTime"))
             or _parse_yt_time(live.get("scheduledStartTime"))
         )
-        ends = _parse_yt_time(live.get("actualEndTime")) or _parse_yt_time(
-            live.get("scheduledEndTime")
-        )
+        actual_end = _parse_yt_time(live.get("actualEndTime"))
+        scheduled_end = _parse_yt_time(live.get("scheduledEndTime"))
         enriched.append(
             {
                 **row,
@@ -254,7 +255,9 @@ def _enrich_live_details(youtube, rows: List[Dict[str, Any]]) -> List[Dict[str, 
                 or row.get("thumbnail_url")
                 or "",
                 "starts_at": starts,
-                "ends_at": ends,
+                "actual_end_at": actual_end,
+                "scheduled_end_at": scheduled_end,
+                "ends_at": actual_end or scheduled_end,
                 "live_broadcast_content": snippet.get("liveBroadcastContent") or "",
             }
         )
@@ -303,7 +306,40 @@ def _session_payload(
     }
 
 
-def _find_live_session(youtube, config: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+def _is_currently_live(row: Dict[str, Any], now: datetime) -> bool:
+    """YouTube search can keep ended streams in eventType=live for hours."""
+    actual_end = row.get("actual_end_at")
+    if isinstance(actual_end, datetime) and actual_end <= now:
+        return False
+    live_bc = (row.get("live_broadcast_content") or "").strip().lower()
+    if live_bc == "none":
+        return False
+    return True
+
+
+def _effective_end_time(row: Dict[str, Any], now: datetime) -> Optional[datetime]:
+    """When the broadcast actually ended, ignoring a future scheduledEndTime."""
+    actual_end = row.get("actual_end_at")
+    if isinstance(actual_end, datetime):
+        return actual_end
+    live_bc = (row.get("live_broadcast_content") or "").strip().lower()
+    if live_bc == "live" and _is_currently_live(row, now):
+        return None
+    scheduled_end = row.get("scheduled_end_at") or row.get("ends_at")
+    if isinstance(scheduled_end, datetime) and scheduled_end <= now:
+        return scheduled_end
+    published = _parse_yt_time(row.get("published_at"))
+    starts = row.get("starts_at")
+    if live_bc == "none":
+        return published or (starts if isinstance(starts, datetime) else None)
+    return published
+
+
+def _find_live_session(
+    youtube,
+    config: Dict[str, Any],
+    now: datetime,
+) -> Optional[Dict[str, Any]]:
     channels = config.get("channels") or []
     for ch in channels:
         channel_id = (ch or {}).get("id") or ""
@@ -314,7 +350,7 @@ def _find_live_session(youtube, config: Dict[str, Any]) -> Optional[Dict[str, An
             continue
         enriched = _enrich_live_details(youtube, hits)
         if not enriched:
-            # Still return search hit if videos.list failed
+            # videos.list failed — keep the search hit as live
             row = hits[0]
             row["starts_at"] = None
             row["ends_at"] = None
@@ -326,6 +362,8 @@ def _find_live_session(youtube, config: Dict[str, Any]) -> Optional[Dict[str, An
                 channel_meta=_channel_meta(config, channel_id),
             )
         row = enriched[0]
+        if not _is_currently_live(row, now):
+            continue
         return _session_payload(
             status="live",
             source="youtube_live",
@@ -415,7 +453,7 @@ def resolve_next_session(
 
     def _resolve() -> Dict[str, Any]:
         youtube = youtube_client if youtube_client is not None else _get_youtube()
-        session = _find_live_session(youtube, config)
+        session = _find_live_session(youtube, config, current)
         if session is None:
             session = _find_soonest_upcoming(youtube, config, current)
         return {
@@ -477,17 +515,30 @@ def _latest_completed_for_channel(
 ) -> Optional[Dict[str, Any]]:
     """Newest completed livestream for one channel ending within the window."""
     horizon_start = now - timedelta(hours=within_hours)
-    hits = _search_channel_broadcasts(
-        youtube, channel_id, "completed", max_results=5
+    # eventType=completed lags; ended streams often stay in eventType=live.
+    hits_completed = _search_channel_broadcasts(
+        youtube,
+        channel_id,
+        "completed",
+        max_results=5,
+        published_after=horizon_start,
     )
+    hits_live = _search_channel_broadcasts(
+        youtube, channel_id, "live", max_results=2
+    )
+    by_id: Dict[str, Dict[str, Any]] = {}
+    for hit in hits_live + hits_completed:
+        vid = hit.get("video_id") or ""
+        if vid and vid not in by_id:
+            by_id[vid] = hit
+    hits = list(by_id.values())
     enriched = _enrich_live_details(youtube, hits)
-    # Prefer enriched rows; fall back to search hits if videos.list empty
     rows = enriched if enriched else hits
     candidates: List[Dict[str, Any]] = []
     for row in rows:
-        ends = row.get("ends_at")
-        if not isinstance(ends, datetime):
-            ends = _parse_yt_time(row.get("published_at"))
+        if _is_currently_live(row, now) and row.get("actual_end_at") is None:
+            continue
+        ends = _effective_end_time(row, now)
         if not isinstance(ends, datetime):
             continue
         if horizon_start <= ends <= now:

@@ -1,0 +1,55 @@
+{
+  "heading": "Meditation wisdom",
+  "subtitle": "Foundational Sahaja Yoga topics to deepen your attention.",
+  "topics": [
+    {
+      "id": "origin-of-sahaja-yoga",
+      "title": "The origin of Sahaja Yoga",
+      "subtitle": "Shri Mataji and the gift of Self-Realization",
+      "accent_label": "Origins",
+      "body": "Sahaja Yoga was founded in 1970 by Nirmala Srivastava (1923-2011), known by millions of Her spiritual followers as Shri Mataji Nirmala Devi. Shri Mataji discovered a technique to awaken the Kundalini energy within human beings. She dedicated Her life to teaching people of all nationalities, races, and religious backgrounds how to use Sahaja Yoga to better theirs. She envisioned the regular practice of Sahaja Yoga producing evolved societies, where people lead joyful, balanced lives."
+    },
+    {
+      "id": "subtle-system",
+      "title": "The Subtle System",
+      "subtitle": "Channels of awareness within",
+      "accent_label": "Foundation",
+      "body": "The subtle system is the network of energy centers (chakras) and channels (nadis) along the central nervous system through which our Kundalini flows. Sahaja Yoga helps you learn to feel, understand and ultimately use your own subtle system to achieve Self-Realization."
+    },
+    {
+      "id": "chakras",
+      "title": "Chakras",
+      "subtitle": "Seven centers of integration",
+      "accent_label": "Inner map",
+      "body": "There are seven main chakras (energy centers) located along the spine. They are the fulcrums that control most aspects of our physical, mental and spiritual lives. Chakras are located at the sites of our main nerve plexuses.\n\nOften difficulties in life can be traced to imbalances or blockages in one or more chakras. Chakras are connected by nadis (or channels). When the Kundalini rises and nourishes the chakras, our body automatically becomes dynamic, creative and integrated.\n\nEach chakra has a physical manifestation in your nervous system and is responsible for the smooth functioning of part of your physiology. Additionally, each chakra has subtle qualities, an essence that can influence your character and personality."
+    },
+    {
+      "id": "kundalini",
+      "title": "Kundalini",
+      "subtitle": "The residual power of pure desire",
+      "accent_label": "Awakening",
+      "body": "Your inner energy, or Kundalini, is a soothing spiritual energy that lies dormant at the base of the spine. It is an expression of the pure desire to evolve and better ourselves, something we all possess. When awakened, it rises through the central channel, clearing and activating your chakras. It allows you to achieve your Self-Realization."
+    },
+    {
+      "id": "left-right-channels",
+      "title": "Left & Right Channels",
+      "subtitle": "Emotions, action, and balance",
+      "accent_label": "Balance",
+      "body": "The left channel relates to emotions and the past; the right to action and the future. Sahaja meditation clears both so the central channel — the present — can flow freely."
+    },
+    {
+      "id": "thoughtless-awareness",
+      "title": "Thoughtless Awareness",
+      "subtitle": "The state of meditation",
+      "accent_label": "Practice",
+      "body": "In thoughtless awareness the mind is silent yet alert. One watches without reacting, resting in the present. This is the natural state Sahaja Yoga makes available through Self-realization."
+    },
+    {
+      "id": "collective",
+      "title": "The Collective",
+      "subtitle": "Growing together in Spirit",
+      "accent_label": "Community",
+      "body": "Meditating with others amplifies the experience. Weekly live sessions, mentoring, and shared wisdom keep the attention clean and the heart open throughout the 21-day journey."
+    }
+  ]
+}

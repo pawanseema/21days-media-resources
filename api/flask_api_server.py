@@ -1,6 +1,6 @@
 import sys
 import os
-from flask import Flask, request, jsonify, send_from_directory
+from flask import Flask, request, jsonify, redirect, send_from_directory
 
 # Add parent directory to path to import from search module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -15,6 +15,7 @@ from api.live_sessions import (
     resolve_recent_recordings,
 )
 from api.year_recordings import resolve_year_recordings
+from api.wisdom_topics import load_wisdom_topics
 
 app = Flask(__name__)
 
@@ -315,6 +316,25 @@ def api_recordings():
         return _youtube_error_response(e)
 
 
+@app.route("/api/wisdom/topics", methods=["GET"])
+def api_wisdom_topics():
+    """
+    Static Sahaja Yoga topics for the Wisdom tab (web + mobile).
+
+    Source: config/wisdom_topics.json (override with WISDOM_TOPICS_CONFIG).
+    """
+    try:
+        return jsonify(load_wisdom_topics()), 200
+    except FileNotFoundError:
+        return jsonify({"error": "Wisdom topics not configured"}), 404
+    except Exception as e:
+        print(f"Error in wisdom topics endpoint: {e}", flush=True)
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e),
+        }), 500
+
+
 @app.route("/api/resources/ingest", methods=["POST"])
 def api_ingest_resource():
     """
@@ -422,8 +442,8 @@ def api_ingest_video():
 
 @app.route("/")
 def index():
-    """Serve the search HTML page at the root URL."""
-    return send_from_directory(UI_DIR, 'search.html')
+    """Serve the 4-tab web app (hash routes: #/live, #/explore, …)."""
+    return send_from_directory(UI_DIR, 'app.html')
 
 
 @app.route("/ui/<path:filename>")
@@ -590,8 +610,8 @@ def api_update_resource(resource_id):
 @app.route("/resource-search")
 @app.route("/resource_search.html")
 def resource_search():
-    """Serve the resource search page."""
-    return send_from_directory(UI_DIR, 'resource_search.html')
+    """Handout search now lives on the Explore tab."""
+    return redirect("/#/explore")
 
 @app.route("/resource-update")
 @app.route("/resource_update.html")
