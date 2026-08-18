@@ -107,23 +107,3 @@
   white-space: nowrap;
 }
 
-.wisdom-modal .modal-dialog {
-  background: #fff;
-  color: var(--ink);
-  max-width: 640px;
-}
-
-.wisdom-modal .modal-header {
-  background: var(--chrome-bg);
-  color: var(--ink);
-}
-
-.wisdom-modal .modal-close {
-  color: var(--ink);
-}
-
-.wisdom-body {
-  padding: 8px 22px 28px;
-  white-space: pre-wrap;
-  line-height: 1.55;
-}

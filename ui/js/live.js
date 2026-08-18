@@ -77,20 +77,19 @@ function recentCard(item) {
   const thumb =
     item.youtube_thumbnail_url ||
     (item.video_id ? `https://img.youtube.com/vi/${item.video_id}/hqdefault.jpg` : "");
-  const when = formatDateTime(item.ends_at || item.published_at);
+  const when = formatDateTime(item.starts_at || item.published_at);
   const channel = item.channel_title || item.channel_handle || "";
   return `
-    <article class="recent-card" data-recent-id="${escapeHtml(item.video_id || "")}">
-      <div class="thumb">
-        ${thumb ? `<img src="${escapeHtml(thumb)}" alt="">` : ""}
-        <div class="play-overlay"></div>
+    <div class="session-video" data-recent-id="${escapeHtml(item.video_id || "")}">
+      ${thumb
+        ? `<img src="${escapeHtml(thumb)}" alt="">`
+        : `<div style="width:88px;height:50px;background:var(--mist);border-radius:8px;flex-shrink:0"></div>`}
+      <div>
+        <div style="font-weight:700">${escapeHtml(item.title || "Recent session")}</div>
+        ${channel ? `<div class="muted" style="font-size:13px">${escapeHtml(channel)}</div>` : ""}
+        ${when ? `<div class="muted" style="font-size:13px">${escapeHtml(when)}</div>` : ""}
       </div>
-      <div class="card-body">
-        <h3>${escapeHtml(item.title || "Recent session")}</h3>
-        ${channel ? `<p class="muted" style="margin:0">${escapeHtml(channel)}</p>` : ""}
-        ${when ? `<p class="muted" style="margin:4px 0 0">${escapeHtml(when)}</p>` : ""}
-      </div>
-    </article>
+    </div>
   `;
 }
 
@@ -129,8 +128,8 @@ export async function showLive() {
       : ""}
     ${session ? sessionCard(session) : emptyCard()}
     <h2 class="section-heading">Recent sessions</h2>
-    <p class="section-sub">Latest recording from each channel (last 72 hours). Tap to watch.</p>
-    <div id="recentList">
+    <p class="section-sub">Tap to watch</p>
+    <div id="recentList" class="${items.length ? "recent-list" : ""}">
       ${items.length
         ? items.map(recentCard).join("")
         : `<p class="muted">No recent recordings in the last 72 hours.</p>`}

@@ -9,7 +9,7 @@
 
 .explore-toggle button {
   flex: 1;
-  border: 0;
+  border: 1.5px solid transparent;
   background: transparent;
   color: var(--ink);
   font: inherit;
@@ -21,8 +21,9 @@
 }
 
 .explore-toggle button.active {
-  background: var(--selected-bg);
-  color: var(--selected-fg);
+  background: transparent;
+  color: var(--ink);
+  border-color: var(--soft-teal);
   font-weight: 800;
 }
 
@@ -321,20 +322,15 @@
   font-weight: 500;
 }
 
-.recent-card {
-  background: rgba(255, 255, 255, 0.92);
+.recent-list {
+  background: #fff;
   border: 1px solid var(--mist);
-  border-radius: 16px;
-  overflow: hidden;
-  cursor: pointer;
-  margin-bottom: 12px;
+  border-radius: 18px;
+  padding: 6px 4px 8px;
 }
 
-.recent-card .card-body h3 {
-  margin: 0 0 4px;
-  font-size: 1.15rem;
-  font-family: var(--font-display);
-  font-weight: 600;
+.recent-list .session-video {
+  padding: 8px 12px;
 }
 
 .session-tile {
@@ -379,15 +375,39 @@
 }
 
 .wisdom-card {
-  display: flex;
-  gap: 14px;
-  align-items: flex-start;
   background: #fff;
   border: 1px solid var(--mist);
   border-radius: 18px;
-  padding: 18px;
   margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.wisdom-card summary {
+  display: flex;
+  gap: 14px;
+  align-items: flex-start;
+  list-style: none;
   cursor: pointer;
+  padding: 18px;
+}
+
+.wisdom-card summary::-webkit-details-marker {
+  display: none;
+}
+
+.wisdom-card-head {
+  flex: 1;
+  min-width: 0;
+}
+
+.wisdom-card h3 {
+  margin: 4px 0;
+  font-family: var(--font-display);
+  font-weight: 600;
+}
+
+.wisdom-card-head .muted {
+  margin: 0;
 }
 
 .wisdom-accent {
@@ -402,10 +422,27 @@
   background: var(--accent);
 }
 
-.wisdom-card h3 {
-  margin: 4px 0;
-  font-family: var(--font-display);
-  font-weight: 600;
+.wisdom-chevron {
+  flex-shrink: 0;
+  width: 10px;
+  height: 10px;
+  margin-top: 8px;
+  border-right: 2px solid var(--muted-ink);
+  border-bottom: 2px solid var(--muted-ink);
+  transform: rotate(45deg);
+  transition: transform 0.15s ease;
+}
+
+.wisdom-card[open] .wisdom-chevron {
+  margin-top: 12px;
+  transform: rotate(225deg);
+}
+
+.wisdom-card-body {
+  padding: 0 18px 18px 36px;
+  white-space: pre-wrap;
+  line-height: 1.55;
+  color: var(--ink);
 }
 
 .wisdom-label {

@@ -4,12 +4,17 @@ Live / upcoming meditation sessions for the 21Days mobile app.
 Resolves against configured YouTube channels (live preferred, else soonest
 upcoming within N hours). Schedule is not invented from a local clock —
 if YouTube has nothing, the API returns session: null.
+
+YouTube search.list costs 100 quota units and has a separate daily Search
+Queries cap. Live/recent therefore use the channel uploads playlist +
+videos.list (~1 unit each) instead of search.
 """
 
 from __future__ import annotations
 
 import json
 import os
+import re
 import socket
 import ssl
 import sys
@@ -17,7 +22,7 @@ import threading
 import time
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 _SCRIPT_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _SCRIPT_DIR.parent
@@ -30,13 +35,18 @@ DEFAULT_CONFIG_PATH = _PROJECT_ROOT / "config" / "live_sessions.json"
 DEFAULT_ZOOM_URL = "https://us06web.zoom.us/j/2121217171"
 DEFAULT_WITHIN_HOURS = 72
 DEFAULT_RECENT_WITHIN_HOURS = 72
-CACHE_TTL_SECONDS = 45
-RECENT_CACHE_TTL_SECONDS = 120
+SNAPSHOT_TTL_SECONDS = 180
+UPLOADS_MAX_RESULTS = 15
 YOUTUBE_HTTP_TIMEOUT_SECONDS = 12
 
 _tls = threading.local()
-_cache: Dict[str, Any] = {"expires_at": 0.0, "payload": None}
-_recent_cache: Dict[str, Any] = {"expires_at": 0.0, "payload": None}
+_snapshot_cache: Dict[str, Any] = {
+    "expires_at": 0.0,
+    "rows_by_channel": None,
+}
+# Serialize YouTube HTTP across Live / recent / recordings so overlapping
+# Flask threads do not share httplib2 SSL state and 503 both clients.
+youtube_io_lock = threading.Lock()
 
 # Transient local bind / routing failures seen on macOS when contacting Google APIs
 _TRANSIENT_ERRNOS = {48, 49, 51, 54, 60, 65}  # addr in use, can't assign, reset, timeout, no route
@@ -51,6 +61,13 @@ _TRANSIENT_MESSAGE_NEEDLES = (
     "broken pipe",
     "temporarily unavailable",
 )
+_QUOTA_MESSAGE_NEEDLES = (
+    "quota exceeded",
+    "quotaexceeded",
+    "daily limit exceeded",
+)
+_KEY_QUERY_RE = re.compile(r"(key=)[^&\s\"']+", re.IGNORECASE)
+_AIZA_RE = re.compile(r"AIza[0-9A-Za-z_-]{20,}")
 
 
 def _load_config(path: Optional[Path] = None) -> Dict[str, Any]:
@@ -96,22 +113,56 @@ def _get_youtube():
     return client
 
 
-def _is_transient_http_error(exc: BaseException) -> bool:
-    try:
-        from googleapiclient.errors import HttpError
-    except ImportError:
-        return False
-    if not isinstance(exc, HttpError):
-        return False
-    status = getattr(getattr(exc, "resp", None), "status", None)
-    return status in {429, 500, 502, 503, 504}
+def redact_youtube_error(exc: BaseException | str) -> str:
+    """Strip API keys from YouTube client error strings before logging."""
+    text = str(exc)
+    text = _KEY_QUERY_RE.sub(r"\1REDACTED", text)
+    return _AIZA_RE.sub("REDACTED", text)
 
 
-def _is_transient_network_error(exc: BaseException) -> bool:
+def _walk_exceptions(exc: BaseException):
     cur: Optional[BaseException] = exc
     seen: set[int] = set()
     while cur is not None and id(cur) not in seen:
         seen.add(id(cur))
+        yield cur
+        cur = cur.__cause__ or cur.__context__
+
+
+def _http_status(exc: BaseException) -> Optional[int]:
+    try:
+        from googleapiclient.errors import HttpError
+    except ImportError:
+        return None
+    if not isinstance(exc, HttpError):
+        return None
+    return getattr(getattr(exc, "resp", None), "status", None)
+
+
+def is_youtube_quota_error(exc: BaseException) -> bool:
+    """Daily quota / search-query cap — do not retry; it will not recover today."""
+    for cur in _walk_exceptions(exc):
+        msg = str(cur).lower()
+        if any(needle in msg for needle in _QUOTA_MESSAGE_NEEDLES):
+            return True
+        status = _http_status(cur)
+        if status == 403 and "quota" in msg:
+            return True
+    return False
+
+
+def _is_transient_http_error(exc: BaseException) -> bool:
+    if is_youtube_quota_error(exc):
+        return False
+    status = _http_status(exc)
+    # Do not retry 429: daily search quota is often labeled rateLimitExceeded.
+    return status in {500, 502, 503, 504}
+
+
+def _is_transient_network_error(exc: BaseException) -> bool:
+    if is_youtube_quota_error(exc):
+        return False
+    for cur in _walk_exceptions(exc):
         if isinstance(cur, (TimeoutError, socket.timeout, ssl.SSLError)):
             return True
         if _is_transient_http_error(cur):
@@ -120,8 +171,9 @@ def _is_transient_network_error(exc: BaseException) -> bool:
             return True
         msg = str(cur).lower()
         if any(needle in msg for needle in _TRANSIENT_MESSAGE_NEEDLES):
+            if "quota" in msg:
+                return False
             return True
-        cur = cur.__cause__ or cur.__context__
     return False
 
 
@@ -130,7 +182,7 @@ def is_transient_youtube_error(exc: BaseException) -> bool:
     return _is_transient_network_error(exc)
 
 
-def _call_with_network_retry(fn: Callable[[], Any], attempts: int = 4) -> Any:
+def _call_with_network_retry(fn: Callable[[], Any], attempts: int = 3) -> Any:
     """Retry YouTube HTTP calls that fail with transient local network errors."""
     last: Optional[BaseException] = None
     for attempt in range(attempts):
@@ -138,7 +190,11 @@ def _call_with_network_retry(fn: Callable[[], Any], attempts: int = 4) -> Any:
             return fn()
         except Exception as exc:  # noqa: BLE001 — narrow by errno below
             last = exc
-            if not _is_transient_network_error(exc) or attempt + 1 >= attempts:
+            if (
+                is_youtube_quota_error(exc)
+                or not _is_transient_network_error(exc)
+                or attempt + 1 >= attempts
+            ):
                 raise
             _reset_youtube_client()
             time.sleep(0.4 * (2 ** attempt))
@@ -176,45 +232,59 @@ def _watch_url(video_id: str) -> str:
     return f"https://www.youtube.com/watch?v={video_id}"
 
 
-def _search_channel_broadcasts(
+def _uploads_playlist_id(channel_id: str) -> str:
+    cid = (channel_id or "").strip()
+    if cid.startswith("UC") and len(cid) > 2:
+        return "UU" + cid[2:]
+    return ""
+
+
+def _list_channel_uploads(
     youtube,
     channel_id: str,
-    event_type: str,
-    max_results: int = 5,
-    published_after: Optional[datetime] = None,
+    max_results: int = UPLOADS_MAX_RESULTS,
 ) -> List[Dict[str, Any]]:
-    """
-    Search a channel for live, upcoming, or completed broadcasts.
+    """Newest uploads for a channel (includes current live when YouTube lists it)."""
+    playlist_id = _uploads_playlist_id(channel_id)
+    if not playlist_id:
+        return []
 
-    event_type: "live" | "upcoming" | "completed"
-    """
-    kwargs: Dict[str, Any] = {
-        "part": "snippet",
-        "channelId": channel_id,
-        "type": "video",
-        "eventType": event_type,
-        "order": "date",
-        "maxResults": max_results,
-    }
-    if published_after is not None:
-        kwargs["publishedAfter"] = (
-            published_after.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    def _fetch() -> Dict[str, Any]:
+        return (
+            youtube.playlistItems()
+            .list(
+                part="snippet,contentDetails",
+                playlistId=playlist_id,
+                maxResults=max_results,
+            )
+            .execute()
         )
-    res = youtube.search().list(**kwargs).execute()
-    out = []
+
+    res = _call_with_network_retry(_fetch)
+    out: List[Dict[str, Any]] = []
     for item in res.get("items") or []:
-        vid = ((item.get("id") or {}).get("videoId") or "").strip()
+        details = item.get("contentDetails") or {}
+        snippet = item.get("snippet") or {}
+        resource = snippet.get("resourceId") or {}
+        vid = (
+            (details.get("videoId") or "").strip()
+            or (resource.get("videoId") or "").strip()
+        )
         if not vid:
             continue
-        snippet = item.get("snippet") or {}
+        title = (snippet.get("title") or "").strip()
+        if title.lower() in {"deleted video", "private video"}:
+            continue
         out.append(
             {
                 "video_id": vid,
-                "title": snippet.get("title") or "",
+                "title": title,
                 "channel_id": snippet.get("channelId") or channel_id,
                 "channel_title": snippet.get("channelTitle") or "",
                 "thumbnail_url": _thumbnail_from_snippet(snippet, vid),
-                "published_at": snippet.get("publishedAt"),
+                "published_at": details.get("videoPublishedAt")
+                or snippet.get("publishedAt"),
+                "live_broadcast_content": snippet.get("liveBroadcastContent") or "",
             }
         )
     return out
@@ -225,8 +295,8 @@ def _enrich_live_details(youtube, rows: List[Dict[str, Any]]) -> List[Dict[str, 
     if not rows:
         return []
     ids = [r["video_id"] for r in rows]
-    res = (
-        youtube.videos()
+    res = _call_with_network_retry(
+        lambda: youtube.videos()
         .list(part="snippet,liveStreamingDetails", id=",".join(ids))
         .execute()
     )
@@ -238,12 +308,11 @@ def _enrich_live_details(youtube, rows: List[Dict[str, Any]]) -> List[Dict[str, 
             continue
         snippet = item.get("snippet") or {}
         live = item.get("liveStreamingDetails") or {}
-        starts = (
-            _parse_yt_time(live.get("actualStartTime"))
-            or _parse_yt_time(live.get("scheduledStartTime"))
-        )
+        actual_start = _parse_yt_time(live.get("actualStartTime"))
+        scheduled_start = _parse_yt_time(live.get("scheduledStartTime"))
         actual_end = _parse_yt_time(live.get("actualEndTime"))
         scheduled_end = _parse_yt_time(live.get("scheduledEndTime"))
+        starts = actual_start or scheduled_start
         enriched.append(
             {
                 **row,
@@ -255,10 +324,13 @@ def _enrich_live_details(youtube, rows: List[Dict[str, Any]]) -> List[Dict[str, 
                 or row.get("thumbnail_url")
                 or "",
                 "starts_at": starts,
+                "actual_start_at": actual_start,
                 "actual_end_at": actual_end,
                 "scheduled_end_at": scheduled_end,
                 "ends_at": actual_end or scheduled_end,
-                "live_broadcast_content": snippet.get("liveBroadcastContent") or "",
+                "live_broadcast_content": snippet.get("liveBroadcastContent")
+                or row.get("live_broadcast_content")
+                or "",
             }
         )
     return enriched
@@ -307,14 +379,12 @@ def _session_payload(
 
 
 def _is_currently_live(row: Dict[str, Any], now: datetime) -> bool:
-    """YouTube search can keep ended streams in eventType=live for hours."""
+    """True only for an in-progress broadcast, not upcoming or ended."""
     actual_end = row.get("actual_end_at")
     if isinstance(actual_end, datetime) and actual_end <= now:
         return False
     live_bc = (row.get("live_broadcast_content") or "").strip().lower()
-    if live_bc == "none":
-        return False
-    return True
+    return live_bc == "live"
 
 
 def _effective_end_time(row: Dict[str, Any], now: datetime) -> Optional[datetime]:
@@ -335,47 +405,87 @@ def _effective_end_time(row: Dict[str, Any], now: datetime) -> Optional[datetime
     return published
 
 
-def _find_live_session(
+def _was_livestream(row: Dict[str, Any]) -> bool:
+    return isinstance(row.get("actual_start_at"), datetime) or isinstance(
+        row.get("actual_end_at"), datetime
+    )
+
+
+def _load_rows_by_channel(
     youtube,
     config: Dict[str, Any],
-    now: datetime,
-) -> Optional[Dict[str, Any]]:
-    channels = config.get("channels") or []
-    for ch in channels:
+) -> Dict[str, List[Dict[str, Any]]]:
+    rows_by_channel: Dict[str, List[Dict[str, Any]]] = {}
+    for ch in config.get("channels") or []:
         channel_id = (ch or {}).get("id") or ""
         if not channel_id:
             continue
-        hits = _search_channel_broadcasts(youtube, channel_id, "live", max_results=1)
-        if not hits:
-            continue
-        enriched = _enrich_live_details(youtube, hits)
-        if not enriched:
-            # videos.list failed — keep the search hit as live
-            row = hits[0]
-            row["starts_at"] = None
-            row["ends_at"] = None
-            return _session_payload(
-                status="live",
-                source="youtube_live",
-                row=row,
-                config=config,
-                channel_meta=_channel_meta(config, channel_id),
+        hits = _list_channel_uploads(youtube, channel_id)
+        rows_by_channel[channel_id] = _enrich_live_details(youtube, hits)
+    return rows_by_channel
+
+
+def _cached_rows_by_channel(
+    youtube,
+    config: Dict[str, Any],
+    use_prod_cache: bool,
+) -> Tuple[Dict[str, List[Dict[str, Any]]], bool]:
+    """
+    One uploads+videos pass for all configured channels.
+
+    Returns (rows_by_channel, stale). On quota / transient failure, reuse the
+    last good snapshot if we have one.
+    """
+    global _snapshot_cache
+    if use_prod_cache:
+        cached = _snapshot_cache.get("rows_by_channel")
+        expires = float(_snapshot_cache.get("expires_at") or 0)
+        if cached is not None and time.time() < expires:
+            return cached, False
+    try:
+        rows = _load_rows_by_channel(youtube, config)
+    except Exception as exc:
+        cached = _snapshot_cache.get("rows_by_channel")
+        if cached is not None and (
+            is_youtube_quota_error(exc) or _is_transient_network_error(exc)
+        ):
+            print(
+                f"YouTube live snapshot failed; serving stale cache: {redact_youtube_error(exc)}",
+                flush=True,
             )
-        row = enriched[0]
-        if not _is_currently_live(row, now):
+            return cached, True
+        raise
+    if use_prod_cache:
+        _snapshot_cache = {
+            "expires_at": time.time() + SNAPSHOT_TTL_SECONDS,
+            "rows_by_channel": rows,
+        }
+    return rows, False
+
+
+def _find_live_session(
+    rows_by_channel: Dict[str, List[Dict[str, Any]]],
+    config: Dict[str, Any],
+    now: datetime,
+) -> Optional[Dict[str, Any]]:
+    for ch in config.get("channels") or []:
+        channel_id = (ch or {}).get("id") or ""
+        if not channel_id:
             continue
-        return _session_payload(
-            status="live",
-            source="youtube_live",
-            row=row,
-            config=config,
-            channel_meta=_channel_meta(config, channel_id),
-        )
+        for row in rows_by_channel.get(channel_id) or []:
+            if _is_currently_live(row, now):
+                return _session_payload(
+                    status="live",
+                    source="youtube_live",
+                    row=row,
+                    config=config,
+                    channel_meta=_channel_meta(config, channel_id),
+                )
     return None
 
 
 def _find_soonest_upcoming(
-    youtube,
+    rows_by_channel: Dict[str, List[Dict[str, Any]]],
     config: Dict[str, Any],
     now: datetime,
 ) -> Optional[Dict[str, Any]]:
@@ -391,14 +501,15 @@ def _find_soonest_upcoming(
         channel_id = (ch or {}).get("id") or ""
         if not channel_id:
             continue
-        hits = _search_channel_broadcasts(
-            youtube, channel_id, "upcoming", max_results=5
-        )
-        enriched = _enrich_live_details(youtube, hits)
         candidates = []
-        for row in enriched:
+        for row in rows_by_channel.get(channel_id) or []:
+            if _is_currently_live(row, now):
+                continue
             starts = row.get("starts_at")
             if not isinstance(starts, datetime):
+                continue
+            live_bc = (row.get("live_broadcast_content") or "").strip().lower()
+            if live_bc not in {"upcoming", ""}:
                 continue
             if now <= starts <= horizon:
                 candidates.append(row)
@@ -426,55 +537,42 @@ def _find_soonest_upcoming(
     return per_channel[0]
 
 
-def resolve_next_session(
-    now: Optional[datetime] = None,
-    config_path: Optional[Path] = None,
-    youtube_client=None,
-    use_cache: bool = True,
-) -> Dict[str, Any]:
-    """
-    Resolve current live or soonest upcoming YouTube session.
-
-    Returns {"server_time": ..., "session": <obj>|null}.
-    """
-    global _cache
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    server_time = current.isoformat()
-
-    if use_cache and now is None and youtube_client is None:
-        cached = _cache.get("payload")
-        if cached is not None and time.time() < float(_cache.get("expires_at") or 0):
-            # Refresh server_time on cached payloads
-            out = dict(cached)
-            out["server_time"] = server_time
-            return out
-
-    config = _load_config(config_path)
-
-    def _resolve() -> Dict[str, Any]:
-        youtube = youtube_client if youtube_client is not None else _get_youtube()
-        session = _find_live_session(youtube, config, current)
-        if session is None:
-            session = _find_soonest_upcoming(youtube, config, current)
-        return {
-            "server_time": server_time,
-            "session": session,
-        }
-
-    # Injected clients (tests) skip retry; production YouTube calls retry on Errno 49 etc.
-    payload = (
-        _resolve()
-        if youtube_client is not None
-        else _call_with_network_retry(_resolve)
+def _latest_completed_for_channel(
+    rows: List[Dict[str, Any]],
+    config: Dict[str, Any],
+    channel_id: str,
+    now: datetime,
+    within_hours: int,
+) -> Optional[Dict[str, Any]]:
+    """Newest completed livestream for one channel ending within the window."""
+    horizon_start = now - timedelta(hours=within_hours)
+    candidates: List[Dict[str, Any]] = []
+    for row in rows:
+        if _is_currently_live(row, now):
+            continue
+        if not _was_livestream(row):
+            continue
+        ends = _effective_end_time(row, now)
+        if not isinstance(ends, datetime):
+            continue
+        if horizon_start <= ends <= now:
+            row = dict(row)
+            row["ends_at"] = ends
+            candidates.append(row)
+    if not candidates:
+        return None
+    candidates.sort(
+        key=lambda r: r["ends_at"]
+        if isinstance(r.get("ends_at"), datetime)
+        else datetime.min.replace(tzinfo=timezone.utc),
+        reverse=True,
     )
-
-    if use_cache and now is None and youtube_client is None:
-        _cache = {
-            "expires_at": time.time() + CACHE_TTL_SECONDS,
-            "payload": payload,
-        }
-
-    return payload
+    best = candidates[0]
+    return _recent_recording_payload(
+        row=best,
+        config=config,
+        channel_meta=_channel_meta(config, channel_id),
+    )
 
 
 def _recent_recording_payload(
@@ -506,58 +604,63 @@ def _recent_recording_payload(
     }
 
 
-def _latest_completed_for_channel(
-    youtube,
-    config: Dict[str, Any],
-    channel_id: str,
-    now: datetime,
-    within_hours: int,
-) -> Optional[Dict[str, Any]]:
-    """Newest completed livestream for one channel ending within the window."""
-    horizon_start = now - timedelta(hours=within_hours)
-    # eventType=completed lags; ended streams often stay in eventType=live.
-    hits_completed = _search_channel_broadcasts(
-        youtube,
-        channel_id,
-        "completed",
-        max_results=5,
-        published_after=horizon_start,
-    )
-    hits_live = _search_channel_broadcasts(
-        youtube, channel_id, "live", max_results=2
-    )
-    by_id: Dict[str, Dict[str, Any]] = {}
-    for hit in hits_live + hits_completed:
-        vid = hit.get("video_id") or ""
-        if vid and vid not in by_id:
-            by_id[vid] = hit
-    hits = list(by_id.values())
-    enriched = _enrich_live_details(youtube, hits)
-    rows = enriched if enriched else hits
-    candidates: List[Dict[str, Any]] = []
-    for row in rows:
-        if _is_currently_live(row, now) and row.get("actual_end_at") is None:
-            continue
-        ends = _effective_end_time(row, now)
-        if not isinstance(ends, datetime):
-            continue
-        if horizon_start <= ends <= now:
-            row = dict(row)
-            row["ends_at"] = ends
-            candidates.append(row)
-    if not candidates:
-        return None
-    candidates.sort(
-        key=lambda r: r["ends_at"]
-        if isinstance(r.get("ends_at"), datetime)
-        else datetime.min.replace(tzinfo=timezone.utc),
-        reverse=True,
-    )
-    best = candidates[0]
-    return _recent_recording_payload(
-        row=best,
-        config=config,
-        channel_meta=_channel_meta(config, channel_id),
+def _with_snapshot(
+    *,
+    now: Optional[datetime],
+    config_path: Optional[Path],
+    youtube_client,
+    use_cache: bool,
+    build,
+):
+    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
+    server_time = current.isoformat()
+    config = _load_config(config_path)
+    use_prod_cache = use_cache and now is None and youtube_client is None
+
+    def _run():
+        youtube = youtube_client if youtube_client is not None else _get_youtube()
+        rows_by_channel, stale = _cached_rows_by_channel(
+            youtube, config, use_prod_cache
+        )
+        payload = build(rows_by_channel, config, current, server_time)
+        if stale:
+            payload = dict(payload)
+            payload["stale"] = True
+        return payload
+
+    if youtube_client is None:
+        with youtube_io_lock:
+            return _run()
+    return _run()
+
+
+def resolve_next_session(
+    now: Optional[datetime] = None,
+    config_path: Optional[Path] = None,
+    youtube_client=None,
+    use_cache: bool = True,
+) -> Dict[str, Any]:
+    """
+    Resolve current live or soonest upcoming YouTube session.
+
+    Returns {"server_time": ..., "session": <obj>|null}.
+    """
+
+    def _build(rows_by_channel, config, current, server_time):
+        session = _find_live_session(rows_by_channel, config, current)
+        if session is None:
+            session = _find_soonest_upcoming(rows_by_channel, config, current)
+        return {
+            "server_time": server_time,
+            "session": session,
+        }
+
+    return _with_snapshot(
+        now=now,
+        config_path=config_path,
+        youtube_client=youtube_client,
+        use_cache=use_cache,
+        build=_build,
     )
 
 
@@ -572,33 +675,22 @@ def resolve_recent_recordings(
 
     Returns {"server_time", "within_hours", "items": [...]}.
     """
-    global _recent_cache
-    current = (now or datetime.now(timezone.utc)).astimezone(timezone.utc)
-    server_time = current.isoformat()
 
-    if use_cache and now is None and youtube_client is None:
-        cached = _recent_cache.get("payload")
-        if cached is not None and time.time() < float(
-            _recent_cache.get("expires_at") or 0
-        ):
-            out = dict(cached)
-            out["server_time"] = server_time
-            return out
-
-    config = _load_config(config_path)
-    within_hours = int(
-        config.get("recent_within_hours") or DEFAULT_RECENT_WITHIN_HOURS
-    )
-
-    def _resolve() -> Dict[str, Any]:
-        youtube = youtube_client if youtube_client is not None else _get_youtube()
+    def _build(rows_by_channel, config, current, server_time):
+        within_hours = int(
+            config.get("recent_within_hours") or DEFAULT_RECENT_WITHIN_HOURS
+        )
         items: List[Dict[str, Any]] = []
         for ch in config.get("channels") or []:
             channel_id = (ch or {}).get("id") or ""
             if not channel_id:
                 continue
             item = _latest_completed_for_channel(
-                youtube, config, channel_id, current, within_hours
+                rows_by_channel.get(channel_id) or [],
+                config,
+                channel_id,
+                current,
+                within_hours,
             )
             if item is not None:
                 items.append(item)
@@ -608,19 +700,13 @@ def resolve_recent_recordings(
             "items": items,
         }
 
-    payload = (
-        _resolve()
-        if youtube_client is not None
-        else _call_with_network_retry(_resolve)
+    return _with_snapshot(
+        now=now,
+        config_path=config_path,
+        youtube_client=youtube_client,
+        use_cache=use_cache,
+        build=_build,
     )
-
-    if use_cache and now is None and youtube_client is None:
-        _recent_cache = {
-            "expires_at": time.time() + RECENT_CACHE_TTL_SECONDS,
-            "payload": payload,
-        }
-
-    return payload
 
 
 # Back-compat alias used by earlier drafts / callers

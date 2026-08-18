@@ -26,6 +26,7 @@ from api.live_sessions import (  # noqa: E402
     _parse_yt_time,
     _thumbnail_from_snippet,
     _watch_url,
+    youtube_io_lock,
 )
 
 DEFAULT_CONFIG_PATH = _PROJECT_ROOT / "config" / "year_playlists.json"
@@ -149,11 +150,11 @@ def resolve_year_recordings(
         youtube = youtube_client if youtube_client is not None else _get_youtube()
         return _list_playlist_videos(youtube, playlist_id)
 
-    videos = (
-        _resolve()
-        if youtube_client is not None
-        else _call_with_network_retry(_resolve)
-    )
+    if youtube_client is not None:
+        videos = _resolve()
+    else:
+        with youtube_io_lock:
+            videos = _call_with_network_retry(_resolve)
 
     cursor = 0
     sessions_out: List[Dict[str, Any]] = []

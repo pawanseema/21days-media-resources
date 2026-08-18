@@ -11,6 +11,8 @@ from search.resource_search import search_resources
 from resources.video_processing import process_video_by_id
 from api.live_sessions import (
     is_transient_youtube_error,
+    is_youtube_quota_error,
+    redact_youtube_error,
     resolve_next_session,
     resolve_recent_recordings,
 )
@@ -61,11 +63,29 @@ def _env_flag(name, default=False):
 
 
 def _youtube_error_response(exc):
-    """Map YouTube timeouts / SSL blips to 503 so clients can retry."""
+    """Map YouTube timeouts / SSL blips / quota to 503 so clients can retry."""
+    safe = redact_youtube_error(exc)
+    if is_youtube_quota_error(exc):
+        print(f"YouTube quota exceeded: {safe}", flush=True)
+        return jsonify({
+            "error": "youtube_quota_exceeded",
+            "message": (
+                "YouTube daily quota exceeded. "
+                "Live sessions will refresh after quota resets."
+            ),
+        }), 503
     transient = is_transient_youtube_error(exc)
+    print(
+        f"YouTube live/recordings error ({'transient' if transient else 'fatal'}): {safe}",
+        flush=True,
+    )
     return jsonify({
-        "error": "Service temporarily unavailable" if transient else "Internal server error",
-        "message": str(exc),
+        "error": "youtube_unavailable" if transient else "internal_error",
+        "message": (
+            "Service temporarily unavailable"
+            if transient
+            else "Something went wrong loading live sessions"
+        ),
     }), 503 if transient else 500
 
 
@@ -286,7 +306,6 @@ def api_live_sessions():
     try:
         return jsonify(resolve_next_session()), 200
     except Exception as e:
-        print(f"Error in live sessions endpoint: {e}", flush=True)
         return _youtube_error_response(e)
 
 
@@ -300,7 +319,6 @@ def api_live_recent():
     try:
         return jsonify(resolve_recent_recordings()), 200
     except Exception as e:
-        print(f"Error in live recent endpoint: {e}", flush=True)
         return _youtube_error_response(e)
 
 
@@ -312,7 +330,6 @@ def api_recordings():
     try:
         return jsonify(resolve_year_recordings()), 200
     except Exception as e:
-        print(f"Error in recordings endpoint: {e}", flush=True)
         return _youtube_error_response(e)
 
 

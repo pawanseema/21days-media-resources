@@ -3,20 +3,6 @@ import { escapeHtml, fetchJson } from "./api.js";
 const WISDOM_URL = "/api/wisdom/topics";
 let topicsCache = null;
 
-function closeWisdomModal() {
-  const modal = document.getElementById("wisdomModal");
-  modal.classList.remove("open");
-  document.body.style.overflow = "";
-}
-
-function openWisdomModal(topic) {
-  document.getElementById("wisdomModalTitle").textContent = topic.title || "";
-  document.getElementById("wisdomModalSubtitle").textContent = topic.subtitle || "";
-  document.getElementById("wisdomModalBody").textContent = topic.body || "";
-  document.getElementById("wisdomModal").classList.add("open");
-  document.body.style.overflow = "hidden";
-}
-
 function renderTopics(data) {
   const panel = document.getElementById("panel-wisdom");
   const heading = data.heading || "Meditation wisdom";
@@ -30,33 +16,23 @@ function renderTopics(data) {
     <div id="wisdomList">
       ${topics
         .map(
-          (topic, index) => `
-        <article class="wisdom-card" data-index="${index}">
-          <div class="wisdom-accent"></div>
-          <div>
-            ${topic.accent_label ? `<div class="wisdom-label">${escapeHtml(topic.accent_label)}</div>` : ""}
-            <h3 style="margin:4px 0">${escapeHtml(topic.title)}</h3>
-            <p class="muted" style="margin:0">${escapeHtml(topic.subtitle || "")}</p>
-          </div>
-        </article>`
+          (topic) => `
+        <details class="wisdom-card">
+          <summary>
+            <div class="wisdom-accent"></div>
+            <div class="wisdom-card-head">
+              ${topic.accent_label ? `<div class="wisdom-label">${escapeHtml(topic.accent_label)}</div>` : ""}
+              <h3>${escapeHtml(topic.title)}</h3>
+              <p class="muted">${escapeHtml(topic.subtitle || "")}</p>
+            </div>
+            <span class="wisdom-chevron" aria-hidden="true"></span>
+          </summary>
+          <div class="wisdom-card-body">${escapeHtml(topic.body || "")}</div>
+        </details>`
         )
         .join("")}
     </div>
   `;
-
-  panel.querySelectorAll(".wisdom-card").forEach((card) => {
-    card.addEventListener("click", () => {
-      const topic = topics[Number(card.dataset.index)];
-      if (topic) openWisdomModal(topic);
-    });
-  });
-}
-
-export function initWisdomModal() {
-  document.getElementById("wisdomClose").addEventListener("click", closeWisdomModal);
-  document.getElementById("wisdomModal").addEventListener("click", (event) => {
-    if (event.target.id === "wisdomModal") closeWisdomModal();
-  });
 }
 
 export async function showWisdom() {
