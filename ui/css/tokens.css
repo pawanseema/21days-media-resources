@@ -1,13 +1,14 @@
 :root {
   --page-bg: #c6e4fd;
-  --chrome-bg: #fff2c5;
+  --chrome-bg: #fff0bf;
   --chrome-fg: #133b5b;
   --ink: #133b5b;
   --muted-ink: #3d5a73;
   --surface: #fffff8;
-  --mist: #d6eaf8;
-  --accent: #f4d890;
-  --accent-soft: #fffcf0;
+  --mist: #dae9ed;
+  --accent: #f3d485;
+  --accent-soft: #fffbee;
+  --accent-strong: #6b4e12;
   --soft-teal: #a5c7df;
   --selected-bg: #a5c7df;
   --selected-fg: #133b5b;
@@ -17,6 +18,6 @@
   --radius: 16px;
   --font-display: "Fraunces", Georgia, serif;
   --font-body: "Nunito", "Segoe UI", sans-serif;
-  --nav-bg: #fffcf0;
+  --nav-bg: #fffbee;
   --title-ink: #133b5b;
 }
