@@ -37,16 +37,18 @@ function sessionCard(session) {
   const hasZoom = Boolean((session.zoom_meeting_url || "").trim());
 
   const actions = live
-    ? `<div class="btn-row" style="margin-top:16px">
-         <p class="muted" style="margin:0 0 4px">Watch here, or join Zoom for the interactive meeting.</p>
-         <button type="button" class="join-btn" id="watchYoutube" ${hasYouTube ? "" : "disabled"}>
-           <strong>Watch on YouTube</strong>
-           <small>Plays on this page</small>
-         </button>
-         <button type="button" class="join-btn outline" id="joinZoom" ${hasZoom ? "" : "disabled"}>
-           <strong>Join Zoom Meeting</strong>
-           <small>Opens Zoom</small>
-         </button>
+    ? `<div class="live-actions">
+         <p class="muted live-actions-hint">Watch here, or join Zoom for the interactive meeting.</p>
+         <div class="join-btn-row">
+           <button type="button" class="join-btn" id="watchYoutube" ${hasYouTube ? "" : "disabled"}>
+             <strong>Watch on YouTube</strong>
+             <small>Plays on this page</small>
+           </button>
+           <button type="button" class="join-btn outline" id="joinZoom" ${hasZoom ? "" : "disabled"}>
+             <strong>Join Zoom Meeting</strong>
+             <small>Opens Zoom</small>
+           </button>
+         </div>
        </div>`
     : "";
 
