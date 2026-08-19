@@ -6,6 +6,7 @@ COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY api/ api/
+COPY config/ config/
 COPY config.py gunicorn.conf.py ./
 COPY resources/ resources/
 COPY search/ search/

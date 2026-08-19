@@ -120,6 +120,37 @@ PY
     enable_mlt="$(python3 -c "import json; print(json.load(open('${ui_config_file}')).get('enableMoreLikeThis', False))" 2>/dev/null || echo false)"
   fi
 
+  # --- tab config endpoints (must be in the container image under config/) ---
+  local wisdom_http
+  wisdom_http="$(curl -sS -o "${tmp_dir}/wisdom.json" -w '%{http_code}' "${base_url}/api/wisdom/topics" || true)"
+  if [[ "${wisdom_http}" == "200" ]]; then
+    if python3 - "${tmp_dir}/wisdom.json" <<'PY'
+import json, sys
+with open(sys.argv[1]) as f:
+    data = json.load(f)
+topics = data.get("topics")
+if not isinstance(topics, list) or not topics:
+    raise SystemExit(1)
+PY
+    then
+      log_info "OK  GET /api/wisdom/topics"
+    else
+      smoke_fail "GET /api/wisdom/topics invalid payload"
+    fi
+  else
+    smoke_fail "GET /api/wisdom/topics (HTTP ${wisdom_http}; config/wisdom_topics.json missing from image?)"
+  fi
+
+  for tab_path in /api/live/sessions /api/recordings; do
+    local tab_http
+    tab_http="$(curl -sS -o /dev/null -w '%{http_code}' "${base_url}${tab_path}" || true)"
+    if [[ "${tab_http}" == "200" || "${tab_http}" == "503" ]]; then
+      log_info "OK  GET ${tab_path} (HTTP ${tab_http})"
+    else
+      smoke_fail "GET ${tab_path} (HTTP ${tab_http}; config/*.json missing from image or fatal YouTube error)"
+    fi
+  done
+
   # --- /api/videos/related (behavior depends on ENABLE_MORE_LIKE_THIS) ---
   local related_file="${tmp_dir}/related.json"
   local related_http
