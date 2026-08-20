@@ -29,6 +29,9 @@ from api.live_sessions import (  # noqa: E402
     youtube_io_lock,
 )
 
+# videos.list accepts at most 50 ids per request.
+_VIDEOS_LIST_CHUNK = 50
+
 DEFAULT_CONFIG_PATH = _PROJECT_ROOT / "config" / "year_playlists.json"
 CACHE_TTL_SECONDS = 180
 
@@ -53,6 +56,41 @@ def _latest_year(config: Dict[str, Any]) -> Dict[str, Any]:
     years = [y for y in (config.get("years") or []) if isinstance(y, dict)]
     years.sort(key=lambda y: int(y.get("year") or 0), reverse=True)
     return years[0]
+
+
+def _past_recording_ids(youtube, video_ids: List[str]) -> set:
+    """
+    Return video ids that are finished recordings (not upcoming / live).
+
+    playlistItems does not expose liveBroadcastContent, so we resolve status
+    via videos.list. Finished livestreams report liveBroadcastContent=none;
+    scheduled future sessions report upcoming.
+    """
+    past: set = set()
+    for i in range(0, len(video_ids), _VIDEOS_LIST_CHUNK):
+        chunk = video_ids[i : i + _VIDEOS_LIST_CHUNK]
+        if not chunk:
+            continue
+        ids = ",".join(chunk)
+
+        def _fetch(ids_csv: str = ids) -> Dict[str, Any]:
+            return (
+                youtube.videos()
+                .list(part="snippet,liveStreamingDetails", id=ids_csv)
+                .execute()
+            )
+
+        res = _call_with_network_retry(_fetch)
+        for item in res.get("items") or []:
+            video_id = (item.get("id") or "").strip()
+            if not video_id:
+                continue
+            snippet = item.get("snippet") or {}
+            live_bc = (snippet.get("liveBroadcastContent") or "").strip().lower()
+            if live_bc in {"upcoming", "live"}:
+                continue
+            past.add(video_id)
+    return past
 
 
 def _list_playlist_videos(youtube, playlist_id: str) -> List[Dict[str, Any]]:
@@ -99,6 +137,20 @@ def _list_playlist_videos(youtube, playlist_id: str) -> List[Dict[str, Any]]:
         page_token = res.get("nextPageToken")
         if not page_token:
             break
+
+    if videos:
+        past_ids = _past_recording_ids(
+            youtube, [v["video_id"] for v in videos]
+        )
+        skipped = len(videos) - len(past_ids)
+        if skipped > 0:
+            print(
+                f"year_recordings: omitting {skipped} upcoming/live playlist "
+                "video(s); Recordings tab is past-only",
+                flush=True,
+            )
+        videos = [v for v in videos if v["video_id"] in past_ids]
+
     videos.sort(
         key=lambda v: v["published_at"]
         or datetime.min.replace(tzinfo=timezone.utc)

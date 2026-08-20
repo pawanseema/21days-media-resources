@@ -45,12 +45,52 @@ class FakePlaylistItems:
         return Req()
 
 
+class FakeVideos:
+    def __init__(self, live_by_id=None):
+        # video_id -> liveBroadcastContent (default "none" = past / VOD)
+        self._live_by_id = live_by_id or {}
+
+    def list(self, **kwargs):
+        parent = self
+        ids = [i for i in (kwargs.get("id") or "").split(",") if i]
+
+        class Req:
+            def execute(self_inner):
+                items = []
+                for vid in ids:
+                    live_bc = parent._live_by_id.get(vid, "none")
+                    item = {
+                        "id": vid,
+                        "snippet": {
+                            "title": vid,
+                            "liveBroadcastContent": live_bc,
+                        },
+                    }
+                    if live_bc == "upcoming":
+                        item["liveStreamingDetails"] = {
+                            "scheduledStartTime": "2099-01-01T00:00:00Z",
+                        }
+                    elif live_bc == "none" and vid.startswith("live_done"):
+                        item["liveStreamingDetails"] = {
+                            "actualStartTime": "2026-01-01T00:00:00Z",
+                            "actualEndTime": "2026-01-01T01:00:00Z",
+                        }
+                    items.append(item)
+                return {"items": items}
+
+        return Req()
+
+
 class FakeYouTube:
-    def __init__(self, items):
+    def __init__(self, items, live_by_id=None):
         self._items = items
+        self._live_by_id = live_by_id or {}
 
     def playlistItems(self):
         return FakePlaylistItems(self._items)
+
+    def videos(self):
+        return FakeVideos(self._live_by_id)
 
 
 class YearRecordingsTests(unittest.TestCase):
@@ -113,6 +153,33 @@ class YearRecordingsTests(unittest.TestCase):
         self.assertEqual(len(payload["sessions"][0]["videos"]), 1)
         self.assertEqual(payload["sessions"][1]["videos"], [])
         self.assertEqual(payload["sessions"][2]["videos"], [])
+
+    def test_omits_upcoming_and_live_playlist_videos(self):
+        items = [
+            _item("old", "Oldest past", 40),
+            _item("mid", "Middle past", 20),
+            _item("sched", "Scheduled future", 1),
+            _item("live_now", "Currently live", 2),
+        ]
+        payload = resolve_year_recordings(
+            config_path=self.config_path,
+            youtube_client=FakeYouTube(
+                items,
+                live_by_id={
+                    "sched": "upcoming",
+                    "live_now": "live",
+                },
+            ),
+            use_cache=False,
+        )
+        all_ids = [
+            v["video_id"]
+            for s in payload["sessions"]
+            for v in s["videos"]
+        ]
+        self.assertEqual(all_ids, ["old", "mid"])
+        self.assertNotIn("sched", all_ids)
+        self.assertNotIn("live_now", all_ids)
 
 
 if __name__ == "__main__":
