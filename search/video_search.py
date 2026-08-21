@@ -924,6 +924,80 @@ def search_video_sections(user_query: str, top_k=3):
     out.sort(key=lambda x: x.get("confidence") or 0, reverse=True)
     return out[:top_k]
 
+
+DEFAULT_LIST_PAGE_SIZE = 100
+MAX_LIST_PAGE_SIZE = 100
+
+
+def list_videos_catalog(
+    limit: int = DEFAULT_LIST_PAGE_SIZE,
+    offset: int = 0,
+) -> Dict:
+    """
+    Browse unique videos from video_context rows (no query embedding).
+
+    One card per video (not each timestamp section). Sorted newest published
+    first, then title. Card shape matches Explore video cards; result_kind
+    is "video" so More like this can stay section-only.
+    """
+    page_size = max(1, min(int(limit or DEFAULT_LIST_PAGE_SIZE), MAX_LIST_PAGE_SIZE))
+    page_offset = max(0, int(offset or 0))
+
+    raw = chroma_get(
+        where={"type": "video_context"},
+        include=["metadatas"],
+    )
+    ids = raw.get("ids") or []
+    metas = raw.get("metadatas") or []
+
+    by_video: Dict[str, Dict] = {}
+    for _chroma_id, meta in zip(ids, metas):
+        meta = meta or {}
+        video_id = (meta.get("video_id") or "").strip()
+        if not video_id or video_id in by_video:
+            continue
+        card = {
+            "video_title": meta.get("video_title", "") or "",
+            "timestamp": "",
+            "section_title": "Full video",
+            "summary": meta.get("section_summary", "") or "",
+            "url": meta.get("video_url", "") or "",
+            "chakra": meta.get("chakra", "") or "",
+            "quote": meta.get("quote", "") or "",
+            "hashtags": meta.get("hashtags", "") or "",
+            "published_at": meta.get("published_at", "") or "",
+            "video_id": video_id,
+            "confidence": 1.0,
+            "result_kind": "video",
+        }
+        duration = meta.get("video_duration_seconds")
+        if duration is not None and duration != "":
+            try:
+                card["section_duration_seconds"] = int(duration)
+            except (TypeError, ValueError):
+                pass
+        by_video[video_id] = card
+
+    cards = list(by_video.values())
+    # Stable sort: title ascending, then published_at descending (newest first).
+    cards.sort(key=lambda c: (c.get("video_title") or "").casefold())
+    cards.sort(key=lambda c: c.get("published_at") or "", reverse=True)
+
+    total = len(cards)
+    page = cards[page_offset : page_offset + page_size]
+    return {
+        "results": page,
+        "count": len(page),
+        "total": total,
+        "limit": page_size,
+        "offset": page_offset,
+    }
+
+
+# Back-compat alias for earlier intent-routing wiring.
+list_video_sections_catalog = list_videos_catalog
+
+
 class ConversationMemory:
     def __init__(self):
         self.history = []

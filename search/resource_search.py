@@ -70,6 +70,17 @@ def _is_transient_chroma_error(exc: BaseException) -> bool:
     wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
     reraise=True,
 )
+def chroma_get(**kwargs):
+    """collection.get with retries for transient disk I/O errors."""
+    return collection.get(**kwargs)
+
+
+@retry(
+    retry=retry_if_exception(_is_transient_chroma_error),
+    stop=stop_after_attempt(3),
+    wait=wait_exponential(multiplier=0.25, min=0.25, max=2),
+    reraise=True,
+)
 def chroma_query(**kwargs):
     """collection.query with retries for transient disk I/O errors."""
     return collection.query(**kwargs)
@@ -238,6 +249,68 @@ def compute_confidence(distance, keyword_boost):
     return round(base + (0.15 * keyword_boost), 3)
 
 
+def _parse_tags(tags_raw) -> List[str]:
+    if isinstance(tags_raw, list):
+        return [str(t).strip() for t in tags_raw if str(t).strip()]
+    if isinstance(tags_raw, str) and tags_raw.strip():
+        return [tag.strip() for tag in tags_raw.split(",") if tag.strip()]
+    return []
+
+
+def _resource_card_from_meta(meta: Dict) -> Dict:
+    return {
+        "resource_id": meta.get("resource_id", "") or meta.get("id", ""),
+        "title": meta.get("title", "") or "",
+        "description": meta.get("description", "") or "",
+        "topic": meta.get("topic", "") or "",
+        "tags": _parse_tags(meta.get("tags", "")),
+        "download_url": meta.get("download_url", "") or "",
+        "file_type": meta.get("file_type", "") or "",
+        "created_at": meta.get("created_at", "") or "",
+        "confidence": 1.0,
+    }
+
+
+DEFAULT_LIST_PAGE_SIZE = 50
+MAX_LIST_PAGE_SIZE = 50
+
+
+def list_resources(limit: int = DEFAULT_LIST_PAGE_SIZE, offset: int = 0) -> Dict:
+    """
+    Browse the handout catalog (no query embedding).
+
+    Stable sort by title, then resource_id. Returns same card shape as search_resources.
+    """
+    page_size = max(1, min(int(limit or DEFAULT_LIST_PAGE_SIZE), MAX_LIST_PAGE_SIZE))
+    page_offset = max(0, int(offset or 0))
+
+    raw = chroma_get(include=["metadatas"])
+    ids = raw.get("ids") or []
+    metas = raw.get("metadatas") or []
+    cards = []
+    for entry_id, meta in zip(ids, metas):
+        meta = meta or {}
+        if not meta.get("resource_id"):
+            meta = {**meta, "resource_id": entry_id}
+        cards.append(_resource_card_from_meta(meta))
+
+    cards.sort(
+        key=lambda c: (
+            (c.get("title") or "").casefold(),
+            (c.get("resource_id") or "").casefold(),
+        )
+    )
+    total = len(cards)
+    page = cards[page_offset : page_offset + page_size]
+    return {
+        "results": page,
+        "count": len(page),
+        "total": total,
+        "limit": page_size,
+        "offset": page_offset,
+    }
+
+
 def search_resources(user_query: str, top_k=5):
     """
     Search for resources based on user query.
@@ -269,26 +342,9 @@ def search_resources(user_query: str, top_k=5):
         keyword_boost = keyword_score(user_query, item["text"])
         confidence = compute_confidence(item["distance"], keyword_boost)
 
-        # Parse tags from comma-separated string back to array
-        tags_str = meta.get("tags", "")
-        tags_list = []
-        if tags_str:
-            if isinstance(tags_str, list):
-                tags_list = tags_str
-            elif isinstance(tags_str, str):
-                tags_list = [tag.strip() for tag in tags_str.split(",") if tag.strip()]
-
-        out.append({
-            "resource_id": meta.get("resource_id", ""),
-            "title": meta.get("title", ""),
-            "description": meta.get("description", ""),
-            "topic": meta.get("topic", ""),
-            "tags": tags_list,
-            "download_url": meta.get("download_url", ""),
-            "file_type": meta.get("file_type", ""),
-            "created_at": meta.get("created_at", ""),
-            "confidence": confidence,
-        })
+        card = _resource_card_from_meta(meta)
+        card["confidence"] = confidence
+        out.append(card)
 
     # 5 | Highest confidence first, then top K
     out.sort(key=lambda x: x.get("confidence") or 0, reverse=True)

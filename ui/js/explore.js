@@ -6,8 +6,7 @@ import {
 } from "./api.js";
 import { openPlayer } from "./player.js";
 
-const VIDEO_API_URL = "/search";
-const RESOURCE_API_URL = "/api/resources/search";
+const EXPLORE_API_URL = "/api/explore/query";
 const UI_CONFIG_URL = "/api/ui-config";
 const RELATED_API_URL = "/api/videos/related";
 
@@ -31,7 +30,7 @@ const EXAMPLE_PROMPTS = {
     "Daily meditation practice guide",
     "Affirmations for meditation",
     "How to raise Kundalini",
-    "Online meditation classes",
+    "List all the handouts",
   ],
 };
 
@@ -71,6 +70,23 @@ async function loadUiConfig() {
 function hideRelatedBanner() {
   $("relatedBanner").classList.remove("visible");
   $("relatedBannerText").textContent = "";
+}
+
+function hideCatalogBanner() {
+  const banner = $("catalogBanner");
+  if (!banner) return;
+  banner.hidden = true;
+  $("catalogBannerText").textContent = "";
+}
+
+function showCatalogBanner(mode, total) {
+  const banner = $("catalogBanner");
+  if (!banner) return;
+  const label = mode === "resources" ? "handouts" : "videos";
+  const totalLabel =
+    typeof total === "number" && total >= 0 ? ` (${total} total)` : "";
+  $("catalogBannerText").textContent = `Showing all ${label}${totalLabel}`;
+  banner.hidden = false;
 }
 
 function showRelatedBanner(seed) {
@@ -144,6 +160,7 @@ function switchContext(mode) {
     "No results found. Try a different search query.";
   $("exploreLoadingText").textContent =
     mode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
+  hideCatalogBanner();
   updateClearButton();
   renderExamplePrompts();
 }
@@ -156,7 +173,11 @@ function createVideoCard(result) {
   const videoId = result.video_id || extractVideoId(result.url);
   const thumbnailUrl = `https://img.youtube.com/vi/${videoId}/maxresdefault.jpg`;
   const showMoreBtn =
-    uiConfig.enableMoreLikeThis && engagedSeed && seedKey(engagedSeed) === seedKey(result);
+    uiConfig.enableMoreLikeThis &&
+    engagedSeed &&
+    engagedSeed.result_kind !== "video" &&
+    Boolean((engagedSeed.timestamp || "").trim()) &&
+    seedKey(engagedSeed) === seedKey(result);
   const durationLabel = formatClipDuration(result.section_duration_seconds);
 
   card.innerHTML = `
@@ -252,7 +273,13 @@ function openVideo(result) {
     timestamp: result.timestamp,
     url: result.url,
     onClose: () => {
-      if (uiConfig.enableMoreLikeThis && lastOpenedResult && searchMode === "videos") {
+      if (
+        uiConfig.enableMoreLikeThis &&
+        lastOpenedResult &&
+        searchMode === "videos" &&
+        lastOpenedResult.result_kind !== "video" &&
+        Boolean((lastOpenedResult.timestamp || "").trim())
+      ) {
         engagedSeed = lastOpenedResult;
         lastOpenedResult = null;
         if (currentVideoResults.length > 0) displayResults(currentVideoResults, "videos");
@@ -266,6 +293,7 @@ function openVideo(result) {
 async function performSearch() {
   const query = $("query").value.trim();
   clearRelatedState();
+  hideCatalogBanner();
   currentVideoResults = [];
   $("exploreResults").innerHTML = "";
   hideMessages();
@@ -280,17 +308,33 @@ async function performSearch() {
     searchMode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
 
   try {
-    const apiUrl = searchMode === "videos" ? VIDEO_API_URL : RESOURCE_API_URL;
-    const { data } = await fetchJson(apiUrl, {
+    const { data } = await fetchJson(EXPLORE_API_URL, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ query, top_k: 5 }),
+      body: JSON.stringify({
+        query,
+        mode: searchMode,
+        top_k: 5,
+        limit: 100,
+        offset: 0,
+      }),
     });
     $("exploreLoading").hidden = true;
+    if (data.intent === "list_catalog") {
+      showCatalogBanner(searchMode, data.total);
+      $("exploreLoadingText").textContent =
+        searchMode === "videos" ? "Loading videos…" : "Loading handouts…";
+    }
     if (data.results && data.results.length > 0) {
       displayResults(data.results, searchMode);
     } else {
       $("exploreNoResults").hidden = false;
+      if (data.intent === "list_catalog") {
+        $("exploreNoResults").querySelector("p").textContent =
+          searchMode === "resources"
+            ? "No handouts are available yet."
+            : "No videos are available yet.";
+      }
     }
   } catch (err) {
     $("exploreLoading").hidden = true;
@@ -309,6 +353,7 @@ async function fetchMoreLikeThis(seed) {
     searchSnapshot = { query: $("query").value, results: [...currentVideoResults] };
   }
   hideMessages();
+  hideCatalogBanner();
   $("exploreLoading").hidden = false;
   $("exploreLoadingText").textContent = "Finding similar clips…";
 
@@ -378,6 +423,7 @@ export function initExplore() {
   $("clearQuery").addEventListener("click", () => {
     $("query").value = "";
     clearRelatedState();
+    hideCatalogBanner();
     currentVideoResults = [];
     $("exploreResults").innerHTML = "";
     hideMessages();

@@ -8,6 +8,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from search.video_search import search_video_sections, recommend_related, list_video_chapters
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
+from search.explore import run_explore_query
 from resources.video_processing import process_video_by_id
 from api.live_sessions import (
     is_transient_youtube_error,
@@ -233,6 +234,62 @@ def api_video_chapters(video_id):
         return jsonify({"error": str(e)}), 400
     except Exception as e:
         print(f"Error in video chapters endpoint: {e}", flush=True)
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e),
+        }), 500
+
+
+@app.route("/api/explore/query", methods=["POST"])
+def api_explore_query():
+    """
+    Explore orchestration: classify intent, then semantic search or catalog list.
+
+    Body: {
+      "query": "...",
+      "mode": "videos" | "resources",
+      "top_k": 5,          # semantic only
+      "limit": 50,         # list_catalog page size
+      "offset": 0          # list_catalog page offset
+    }
+    Response: { intent, mode, query, results, count, ... }
+    """
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+
+        data = request.get_json() or {}
+        if "query" not in data:
+            return jsonify({"error": "Missing required field: 'query'"}), 400
+
+        query = str(data.get("query") or "").strip()
+        if not query:
+            return jsonify({"error": "Query cannot be empty"}), 400
+
+        mode = str(data.get("mode") or "videos").strip()
+        top_k = data.get("top_k", 5)
+        if not isinstance(top_k, int) or top_k < 1:
+            top_k = 5
+        limit = data.get("limit")
+        if limit is not None and (not isinstance(limit, int) or limit < 1):
+            limit = None
+        offset = data.get("offset", 0)
+        if not isinstance(offset, int) or offset < 0:
+            offset = 0
+
+        payload = run_explore_query(
+            query,
+            mode=mode,
+            top_k=top_k,
+            limit=limit,
+            offset=offset,
+        )
+        return jsonify(payload), 200
+
+    except Exception as e:
+        print(f"Error in explore query endpoint: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
         return jsonify({
             "error": "Internal server error",
             "message": str(e),

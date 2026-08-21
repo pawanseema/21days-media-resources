@@ -130,6 +130,20 @@
   display: flex;
 }
 
+.catalog-banner {
+  margin-top: 12px;
+  padding: 12px 14px;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid var(--mist);
+  border-radius: 12px;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.catalog-banner[hidden] {
+  display: none !important;
+}
+
 .related-banner span {
   color: var(--ink);
   font-weight: 700;
