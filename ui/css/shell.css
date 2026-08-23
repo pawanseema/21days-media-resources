@@ -216,7 +216,8 @@ a {
   }
 
   .header-text {
-    text-align: left;
+    text-align: center;
+    min-width: 0;
   }
 
   .header-text h1 {

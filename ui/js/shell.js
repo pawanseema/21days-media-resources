@@ -3,44 +3,45 @@ import { showLive } from "./live.js";
 import { showRecordings } from "./recordings.js";
 import { showWisdom } from "./wisdom.js";
 
+/** Flip to true to restore the Wisdom tab in the main nav. */
+export const SHOW_WISDOM_TAB = false;
+
 export const TABS = {
   live: {
     id: "live",
-    label: "Live",
-    subtitle: "Live and upcoming sessions",
+    label: "Upcoming",
   },
   explore: {
     id: "explore",
     label: "Explore",
-    subtitle: "Search meditation videos and handouts",
   },
   recordings: {
     id: "recordings",
     label: "Recordings",
-    subtitle: "Access previous session recordings",
   },
   wisdom: {
     id: "wisdom",
     label: "Wisdom",
-    subtitle: "Sahaja Yoga knowledge",
   },
 };
 
 export function parseHash() {
-  const raw = (location.hash || "#/live").replace(/^#/, "");
+  const raw = (location.hash || "#/explore").replace(/^#/, "");
   const [pathPart, queryPart] = raw.split("?");
-  const tab = (pathPart.replace(/^\//, "").split("/")[0] || "live").toLowerCase();
+  let tab = (pathPart.replace(/^\//, "").split("/")[0] || "explore").toLowerCase();
   const params = new URLSearchParams(queryPart || "");
-  return {
-    tab: TABS[tab] ? tab : "live",
-    params,
-  };
+  if (!TABS[tab] || (tab === "wisdom" && !SHOW_WISDOM_TAB)) {
+    tab = "explore";
+  }
+  return { tab, params };
 }
 
 function setActive(tab) {
-  document.getElementById("headerSubtitle").textContent = TABS[tab].subtitle;
-  document.title = `21Days — ${TABS[tab].label}`;
   document.querySelectorAll(".main-nav a").forEach((link) => {
+    const isWisdom = link.dataset.tab === "wisdom";
+    if (isWisdom) {
+      link.hidden = !SHOW_WISDOM_TAB;
+    }
     link.classList.toggle("active", link.dataset.tab === tab);
   });
   document.querySelectorAll(".tab-panel").forEach((panel) => {
@@ -56,7 +57,11 @@ function canonicalHash(tab, params) {
 async function applyRoute() {
   const { tab, params } = parseHash();
   const rawTab = (location.hash.replace(/^#\/?/, "").split("?")[0] || "").toLowerCase();
-  if (!location.hash || !TABS[rawTab]) {
+  if (
+    !location.hash ||
+    !TABS[rawTab] ||
+    (rawTab === "wisdom" && !SHOW_WISDOM_TAB)
+  ) {
     history.replaceState(null, "", canonicalHash(tab, params));
   }
   setActive(tab);
@@ -67,14 +72,14 @@ async function applyRoute() {
     showExplore(params);
   } else if (tab === "recordings") {
     await showRecordings();
-  } else if (tab === "wisdom") {
+  } else if (tab === "wisdom" && SHOW_WISDOM_TAB) {
     await showWisdom();
   }
 }
 
 export function initShell() {
   if (!location.hash) {
-    history.replaceState(null, "", "#/live");
+    history.replaceState(null, "", "#/explore");
   }
   window.addEventListener("hashchange", applyRoute);
   applyRoute();
