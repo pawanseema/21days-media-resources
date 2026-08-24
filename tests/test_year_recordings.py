@@ -106,9 +106,27 @@ class YearRecordingsTests(unittest.TestCase):
                         "title": "21 Days 2026",
                         "playlist_id": "PLtest",
                         "sessions": [
-                            {"id": "s1", "label": "Session 1", "video_count": 2},
-                            {"id": "s2a", "label": "Session 2A", "video_count": 1},
-                            {"id": "s2b", "label": "Session 2B", "video_count": 1},
+                            {
+                                "id": "s1",
+                                "label": "Session 1",
+                                "video_count": 2,
+                                "start_date": "2026-01-05",
+                                "end_date": "2026-01-25",
+                            },
+                            {
+                                "id": "s2a",
+                                "label": "Session 2A",
+                                "video_count": 1,
+                                "start_date": "2026-02-01",
+                                "end_date": "2026-02-11",
+                            },
+                            {
+                                "id": "s2b",
+                                "label": "Session 2B",
+                                "video_count": 1,
+                                "start_date": "2026-02-12",
+                                "end_date": "2026-02-21",
+                            },
                         ],
                     }
                 ]
@@ -142,6 +160,10 @@ class YearRecordingsTests(unittest.TestCase):
             [v["video_id"] for v in payload["sessions"][2]["videos"]],
             ["new"],
         )
+        self.assertEqual(payload["sessions"][0]["starts_at"], "2026-01-05")
+        self.assertEqual(payload["sessions"][0]["ends_at"], "2026-01-25")
+        self.assertEqual(payload["sessions"][1]["starts_at"], "2026-02-01")
+        self.assertEqual(payload["sessions"][1]["ends_at"], "2026-02-11")
 
     def test_short_playlist_does_not_invent_videos(self):
         items = [_item("only", "Only", 5)]
@@ -153,6 +175,9 @@ class YearRecordingsTests(unittest.TestCase):
         self.assertEqual(len(payload["sessions"][0]["videos"]), 1)
         self.assertEqual(payload["sessions"][1]["videos"], [])
         self.assertEqual(payload["sessions"][2]["videos"], [])
+        # Dates come from config even when a session has no videos yet.
+        self.assertEqual(payload["sessions"][1]["starts_at"], "2026-02-01")
+        self.assertEqual(payload["sessions"][1]["ends_at"], "2026-02-11")
 
     def test_omits_upcoming_and_live_playlist_videos(self):
         items = [

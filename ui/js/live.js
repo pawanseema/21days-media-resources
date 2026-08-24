@@ -55,8 +55,7 @@ function sessionCard(session) {
   return `
     <article class="surface-card">
       ${live ? `<span class="live-badge">LIVE</span>` : `<span class="upcoming-badge">Upcoming</span>`}
-      <p class="muted" style="margin:12px 0 6px">${live ? "Live now" : "Upcoming live session"}</p>
-      <h2 style="margin:0 0 8px">${title}</h2>
+      <h2 style="margin:12px 0 8px">${title}</h2>
       ${channel ? `<div class="meta-line">${escapeHtml(channel)}</div>` : ""}
       ${dateLabel ? `<div class="meta-line">${escapeHtml(dateLabel)}</div>` : ""}
       ${timeLabel ? `<div class="meta-line">${escapeHtml(timeLabel)}</div>` : ""}
@@ -129,7 +128,7 @@ export async function showLive() {
          </div>`
       : ""}
     ${session ? sessionCard(session) : emptyCard()}
-    <h2 class="section-heading">Recent sessions</h2>
+    <h2 class="section-heading">Recent</h2>
     <p class="section-sub">Tap to watch</p>
     <div id="recentList" class="${items.length ? "recent-list" : ""}">
       ${items.length

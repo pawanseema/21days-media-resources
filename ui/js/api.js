@@ -61,7 +61,11 @@ export function formatDateTime(iso) {
 
 export function formatDate(iso) {
   if (!iso) return "";
-  const date = new Date(iso);
+  // Date-only strings are calendar dates; parse as local civil day (not UTC).
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(iso).trim());
+  const date = m
+    ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]))
+    : new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return new Intl.DateTimeFormat(undefined, {
     weekday: "long",

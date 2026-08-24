@@ -2,7 +2,8 @@
 Year playlist recordings for the 21Days mobile Recordings tab.
 
 Config lists years with a YouTube playlist id and ordered sessions (video
-counts). Videos are sorted oldest-first and sliced into those sessions.
+counts plus optional start_date / end_date calendar windows). Videos are
+sorted oldest-first and sliced into those sessions.
 """
 
 from __future__ import annotations
@@ -171,6 +172,23 @@ def _video_payload(row: Dict[str, Any]) -> Dict[str, Any]:
     }
 
 
+def _config_session_date(raw: Any) -> Optional[str]:
+    """Normalize config start_date / end_date to an ISO date string (YYYY-MM-DD)."""
+    if raw is None:
+        return None
+    text = str(raw).strip()
+    if not text:
+        return None
+    # Accept full ISO timestamps; keep calendar date only for display stability.
+    if "T" in text:
+        text = text.split("T", 1)[0]
+    try:
+        datetime.strptime(text, "%Y-%m-%d")
+    except ValueError as exc:
+        raise ValueError(f"Invalid session date {raw!r}; use YYYY-MM-DD") from exc
+    return text
+
+
 def resolve_year_recordings(
     config_path: Optional[Path] = None,
     youtube_client=None,
@@ -180,6 +198,7 @@ def resolve_year_recordings(
     Latest configured year, playlist videos sliced into sessions.
 
     Returns {year, title, playlist_id, sessions: [...]}.
+    Session starts_at / ends_at come from config start_date / end_date (static).
     """
     global _cache
 
@@ -218,11 +237,18 @@ def resolve_year_recordings(
             count = 0
         chunk = videos[cursor : cursor + count]
         cursor += count
+        # Prefer start_date/end_date; also accept starts_at/ends_at aliases.
+        starts_at = _config_session_date(
+            spec.get("start_date", spec.get("starts_at"))
+        )
+        ends_at = _config_session_date(spec.get("end_date", spec.get("ends_at")))
         sessions_out.append(
             {
                 "id": spec.get("id") or "",
                 "label": spec.get("label") or "",
                 "video_count": count,
+                "starts_at": starts_at,
+                "ends_at": ends_at,
                 "videos": [_video_payload(row) for row in chunk],
             }
         )

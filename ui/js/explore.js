@@ -15,14 +15,16 @@ const PLACEHOLDERS = {
   resources: "Search meditation handouts…",
 };
 
+/** Video chips ordered shortest-first so wrap uses less vertical space. */
 const EXAMPLE_PROMPTS = {
   videos: [
-    "What is Sahaja Yoga Meditation?",
+    "Foot Soak with Mark",
+    "Meditation with Flute",
     "Heart chakra meditation",
-    "Experience the silence within",
+    "Meditation and Daily Life",
     "Founder's talk on Innocence",
-    "Footsoak with Wendy",
-    "Piano music for meditation by Sia",
+    "Experience the silence within",
+    "What is Sahaja Yoga Meditation?",
   ],
   resources: [
     "Beginner meditation handout",

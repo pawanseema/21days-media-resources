@@ -19,15 +19,33 @@ function videoRow(sessionLabel, video) {
   `;
 }
 
+function sessionDateRange(session) {
+  const start = formatDate(session.starts_at);
+  const end = formatDate(session.ends_at);
+  if (start && end) {
+    return start === end ? start : `${start} – ${end}`;
+  }
+  if (start) return `Starts ${start}`;
+  if (end) return `Ends ${end}`;
+  return "";
+}
+
 function sessionTile(session) {
   const videos = (session.videos || []).filter((v) => v && v.video_id);
   if (!videos.length) return "";
   const count = videos.length;
+  const range = sessionDateRange(session);
+  const meta = [
+    range,
+    `${count} recording${count === 1 ? "" : "s"}`,
+  ]
+    .filter(Boolean)
+    .join(" · ");
   return `
     <details class="session-tile">
       <summary>
         <h3>${escapeHtml(session.label || "Session")}</h3>
-        <p class="muted" style="margin:4px 0 0">${count} video${count === 1 ? "" : "s"}</p>
+        <p class="muted" style="margin:4px 0 0">${escapeHtml(meta)}</p>
       </summary>
       ${videos.map((video) => videoRow(session.label, video)).join("")}
     </details>
@@ -50,7 +68,7 @@ export async function showRecordings() {
     const heading = data.title || `${data.year || ""} recordings`;
     panel.innerHTML = `
       <h2 class="section-heading" style="margin-top:4px">${escapeHtml(heading)}</h2>
-      <p class="section-sub">Open a session to browse its videos. Tap a row to play here.</p>
+      <p class="section-sub">Open a session to browse its recordings. Tap a row to play here.</p>
       ${sessions.map((session) => sessionTile(session)).join("")}
     `;
 
