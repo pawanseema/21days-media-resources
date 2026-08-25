@@ -11,8 +11,8 @@ const UI_CONFIG_URL = "/api/ui-config";
 const RELATED_API_URL = "/api/videos/related";
 
 const PLACEHOLDERS = {
-  videos: "Type your query to search meditation videos…",
-  resources: "Search meditation handouts…",
+  videos: "Type to search meditation videos",
+  resources: "Type to search meditation handouts",
 };
 
 /** Video chips ordered shortest-first so wrap uses less vertical space. */
@@ -197,12 +197,16 @@ function createVideoCard(result) {
         ${uiConfig.showResultDebug ? `<span class="pill">Starts ${escapeHtml(result.timestamp || "N/A")}</span>` : ""}
       </div>
       <div class="summary">${escapeHtml(result.summary || "No summary available")}</div>
-      <div class="meta-row">
+      ${
+        uiConfig.showResultDebug && (result.chakra || result.confidence)
+          ? `<div class="meta-row">
         ${result.chakra ? `<span class="pill chakra-pill">${escapeHtml(result.chakra)}</span>` : ""}
-        ${uiConfig.showResultDebug && result.confidence
+        ${result.confidence
           ? `<span class="pill">${(result.confidence * 100).toFixed(1)}%</span>`
           : ""}
-      </div>
+      </div>`
+          : ""
+      }
       ${result.quote ? `<div class="quote">"${escapeHtml(result.quote)}"</div>` : ""}
       ${uiConfig.showResultDebug && result.hashtags
         ? `<div class="muted">${escapeHtml(result.hashtags)}</div>`
