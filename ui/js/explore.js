@@ -11,8 +11,8 @@ const UI_CONFIG_URL = "/api/ui-config";
 const RELATED_API_URL = "/api/videos/related";
 
 const PLACEHOLDERS = {
-  videos: "Type to search meditation videos",
-  resources: "Type to search meditation handouts",
+  videos: "Search meditation videos",
+  resources: "Search meditation handouts",
 };
 
 /** Video chips ordered shortest-first so wrap uses less vertical space. */
