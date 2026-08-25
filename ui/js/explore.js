@@ -241,14 +241,13 @@ function createResourceCard(result) {
   card.innerHTML = `
     <div class="card-body">
       <div class="handout-title">${escapeHtml(result.title)}</div>
-      <div class="meta-row">
-        <span class="pill">${escapeHtml(result.topic || "General")}</span>
-        ${uiConfig.showResultDebug
-          ? `<span class="pill">${escapeHtml((result.file_type || "file").toUpperCase())}</span>`
-          : ""}
-      </div>
+      ${uiConfig.showResultDebug
+        ? `<div class="meta-row"><span class="pill">${escapeHtml((result.file_type || "file").toUpperCase())}</span></div>`
+        : ""}
       <div class="summary">${escapeHtml(description)}</div>
-      ${tagsHtml ? `<div class="meta-row">${tagsHtml}</div>` : ""}
+      ${uiConfig.showResultDebug && tagsHtml
+        ? `<div class="meta-row">${tagsHtml}</div>`
+        : ""}
       <div class="handout-open">Tap to open →</div>
     </div>
   `;
