@@ -4,22 +4,31 @@
   inset: 0;
   z-index: 1000;
   background: rgba(0, 0, 0, 0.88);
-  overflow: auto;
+  /* Pin layout: dialog fills height; only meta scrolls (not the iframe). */
+  overflow: hidden;
+  align-items: center;
+  justify-content: center;
+  padding: 2vh 0;
+  box-sizing: border-box;
 }
 
 .modal.open {
-  display: block;
+  display: flex;
 }
 
 .modal-dialog {
+  display: flex;
+  flex-direction: column;
   width: min(920px, 94vw);
-  margin: 3vh auto 5vh;
+  max-height: 96vh;
+  margin: 0 auto;
   background: #111;
   border-radius: 12px;
   overflow: hidden;
 }
 
 .modal-header {
+  flex: 0 0 auto;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -45,6 +54,7 @@
 }
 
 .player-frame {
+  flex: 0 0 auto;
   position: relative;
   padding-top: 56.25%;
   background: #000;
@@ -59,6 +69,10 @@
 }
 
 .player-meta {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   background: #fffff8;
   color: var(--ink);
   padding: 16px 18px 20px;
@@ -106,4 +120,3 @@
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
 }
-
