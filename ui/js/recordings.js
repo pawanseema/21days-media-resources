@@ -1,4 +1,4 @@
-import { escapeHtml, fetchJson, formatDate } from "./api.js";
+import { API_MESSAGES, escapeHtml, fetchJson, formatDate } from "./api.js";
 import { openPlayer } from "./player.js";
 
 const RECORDINGS_URL = "/api/recordings";
@@ -54,10 +54,15 @@ function sessionTile(session) {
 
 export async function showRecordings() {
   const panel = document.getElementById("panel-recordings");
-  panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>Loading recordings…</p></div>`;
+  const setLoading = (text) => {
+    panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>${escapeHtml(text)}</p></div>`;
+  };
+  setLoading("Loading recordings…");
 
   try {
-    const { data } = await fetchJson(RECORDINGS_URL);
+    const { data } = await fetchJson(RECORDINGS_URL, {}, {
+      onRetry: () => setLoading(API_MESSAGES.retrying),
+    });
     const sessions = (data.sessions || []).filter(
       (session) => Array.isArray(session.videos) && session.videos.some((v) => v && v.video_id)
     );
@@ -83,8 +88,7 @@ export async function showRecordings() {
   } catch (err) {
     panel.innerHTML = `
       <div class="panel-status">
-        <h2>Unable to load recordings</h2>
-        <p class="muted">${escapeHtml(err.message || "Request failed")}</p>
+        <p>${escapeHtml(API_MESSAGES.requestFailed)}</p>
         <button type="button" class="btn secondary" id="recordingsRetry">Retry</button>
       </div>
     `;

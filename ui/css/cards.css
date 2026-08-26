@@ -531,6 +531,12 @@
   margin-top: 12px;
 }
 
+.inline-error .btn {
+  background: rgba(255, 255, 255, 0.2);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.45);
+}
+
 .inline-error[hidden] {
   display: none !important;
 }

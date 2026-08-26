@@ -1,4 +1,4 @@
-import { escapeHtml, fetchJson } from "./api.js";
+import { API_MESSAGES, escapeHtml, fetchJson } from "./api.js";
 
 const WISDOM_URL = "/api/wisdom/topics";
 let topicsCache = null;
@@ -41,16 +41,20 @@ export async function showWisdom() {
     return;
   }
   const panel = document.getElementById("panel-wisdom");
-  panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>Loading wisdom topics…</p></div>`;
+  const setLoading = (text) => {
+    panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>${escapeHtml(text)}</p></div>`;
+  };
+  setLoading("Loading wisdom topics…");
   try {
-    const { data } = await fetchJson(WISDOM_URL);
+    const { data } = await fetchJson(WISDOM_URL, {}, {
+      onRetry: () => setLoading(API_MESSAGES.retrying),
+    });
     topicsCache = data;
     renderTopics(data);
   } catch (err) {
     panel.innerHTML = `
       <div class="panel-status">
-        <h2>Unable to load wisdom topics</h2>
-        <p class="muted">${escapeHtml(err.message || "Request failed")}</p>
+        <p>${escapeHtml(API_MESSAGES.requestFailed)}</p>
         <button type="button" class="btn secondary" id="wisdomRetry">Retry</button>
       </div>
     `;

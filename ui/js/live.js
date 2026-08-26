@@ -1,4 +1,5 @@
 import {
+  API_MESSAGES,
   countdownLabel,
   escapeHtml,
   fetchJson,
@@ -96,24 +97,29 @@ function recentCard(item) {
 
 export async function showLive() {
   const panel = document.getElementById("panel-live");
-  panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>Loading live sessions…</p></div>`;
+  const setLoading = (text) => {
+    panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>${escapeHtml(text)}</p></div>`;
+  };
+  setLoading("Loading live sessions…");
 
   let sessionData = { session: null };
   let recentData = { items: [] };
   let error = "";
 
+  const onRetry = () => setLoading(API_MESSAGES.retrying);
+
   try {
-    const sessionRes = await fetchJson(SESSIONS_URL);
+    const sessionRes = await fetchJson(SESSIONS_URL, {}, { onRetry });
     sessionData = sessionRes.data;
   } catch (err) {
-    error = err.message || "Could not reach live sessions.";
+    error = API_MESSAGES.requestFailed;
   }
 
   try {
-    const recentRes = await fetchJson(RECENT_URL);
+    const recentRes = await fetchJson(RECENT_URL, {}, { onRetry });
     recentData = recentRes.data;
   } catch (err) {
-    if (!error) error = err.message || "Could not load recent sessions.";
+    if (!error) error = API_MESSAGES.requestFailed;
   }
 
   const session = sessionData.session;
@@ -122,8 +128,7 @@ export async function showLive() {
   panel.innerHTML = `
     ${error
       ? `<div class="error-banner">
-           <strong>Could not reach live sessions</strong>
-           <p class="muted">${escapeHtml(error)}</p>
+           <p>${escapeHtml(error)}</p>
            <button type="button" class="btn secondary" id="liveRetry">Retry</button>
          </div>`
       : ""}

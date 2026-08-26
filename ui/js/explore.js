@@ -1,4 +1,5 @@
 import {
+  API_MESSAGES,
   escapeHtml,
   extractVideoId,
   fetchJson,
@@ -135,14 +136,26 @@ function updateClearButton() {
   updateChipVisibility();
 }
 
-function showError(message) {
+function showError(message, { onRetry } = {}) {
   const error = $("exploreError");
-  error.textContent = message;
+  error.innerHTML = `
+    <p style="margin:0">${escapeHtml(message)}</p>
+    ${
+      onRetry
+        ? `<button type="button" class="btn secondary" id="exploreRetry" style="margin-top:10px">Retry</button>`
+        : ""
+    }
+  `;
   error.hidden = false;
+  const retry = document.getElementById("exploreRetry");
+  if (retry && typeof onRetry === "function") {
+    retry.addEventListener("click", onRetry);
+  }
 }
 
 function hideMessages() {
   $("exploreError").hidden = true;
+  $("exploreError").innerHTML = "";
   $("exploreNoResults").hidden = true;
   $("exploreLoading").hidden = true;
 }
@@ -313,17 +326,25 @@ async function performSearch() {
     searchMode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
 
   try {
-    const { data } = await fetchJson(EXPLORE_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        query,
-        mode: searchMode,
-        top_k: 5,
-        limit: 100,
-        offset: 0,
-      }),
-    });
+    const { data } = await fetchJson(
+      EXPLORE_API_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          query,
+          mode: searchMode,
+          top_k: 5,
+          limit: 100,
+          offset: 0,
+        }),
+      },
+      {
+        onRetry: () => {
+          $("exploreLoadingText").textContent = API_MESSAGES.retrying;
+        },
+      }
+    );
     $("exploreLoading").hidden = true;
     if (data.intent === "list_catalog") {
       showCatalogBanner(searchMode, data.total);
@@ -343,7 +364,7 @@ async function performSearch() {
     }
   } catch (err) {
     $("exploreLoading").hidden = true;
-    showError(err.message || "Failed to search. Make sure the API server is running on port 5005.");
+    showError(API_MESSAGES.requestFailed, { onRetry: performSearch });
   }
 }
 
@@ -351,7 +372,7 @@ async function fetchMoreLikeThis(seed) {
   if (!uiConfig.enableMoreLikeThis || !seed) return;
   const videoId = seed.video_id || extractVideoId(seed.url || "");
   if (!seed.chroma_id && (!videoId || !seed.timestamp)) {
-    showError("Cannot find related clips for this result (missing video id or timestamp).");
+    showError("Couldn't find similar clips for this result.");
     return;
   }
   if (!relatedViewActive) {
@@ -367,11 +388,19 @@ async function fetchMoreLikeThis(seed) {
     : { video_id: videoId, timestamp: seed.timestamp, top_k: 5 };
 
   try {
-    const { data } = await fetchJson(RELATED_API_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    });
+    const { data } = await fetchJson(
+      RELATED_API_URL,
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      },
+      {
+        onRetry: () => {
+          $("exploreLoadingText").textContent = API_MESSAGES.retrying;
+        },
+      }
+    );
     $("exploreLoading").hidden = true;
     relatedViewActive = true;
     engagedSeed = null;
@@ -387,7 +416,9 @@ async function fetchMoreLikeThis(seed) {
     }
   } catch (err) {
     $("exploreLoading").hidden = true;
-    showError(err.message || "Failed to load related clips.");
+    showError(API_MESSAGES.requestFailed, {
+      onRetry: () => fetchMoreLikeThis(seed),
+    });
   }
 }
 

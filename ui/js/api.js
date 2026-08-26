@@ -98,21 +98,38 @@ export function countdownLabel(startsAt, isLive) {
 }
 
 /**
- * POST/GET JSON. On HTTP 5xx or network failure, retry once after a short delay.
+ * POST/GET JSON. Retries transient failures up to [retries] times (default 2).
+ * Calls [onRetry] before each retry so UIs can show a waiting message.
  */
-export async function fetchJson(url, options = {}, { retries = 1, retryDelayMs = 350 } = {}) {
+export const API_MESSAGES = {
+  retrying: "Taking longer than usual. Trying again…",
+  requestFailed:
+    "Couldn't complete the request. Check your connection and try again.",
+};
+
+export async function fetchJson(
+  url,
+  options = {},
+  { retries = 2, retryDelayMs = 450, onRetry } = {}
+) {
   let lastError = null;
-  for (let attempt = 0; attempt <= retries; attempt++) {
+  const maxAttempts = retries + 1;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let response;
     try {
       response = await fetch(url, options);
     } catch (err) {
       lastError = err;
+      console.warn(
+        `API network error (attempt ${attempt + 1}/${maxAttempts}):`,
+        err
+      );
       if (attempt < retries) {
+        if (typeof onRetry === "function") onRetry();
         await sleep(retryDelayMs);
         continue;
       }
-      throw err;
+      throw new Error(API_MESSAGES.requestFailed);
     }
 
     let data = {};
@@ -124,15 +141,21 @@ export async function fetchJson(url, options = {}, { retries = 1, retryDelayMs =
 
     if (response.ok) return { response, data };
 
-    const errMsg = data.error || data.message || `Request failed (${response.status})`;
+    const errMsg =
+      data.error || data.message || `Request failed (${response.status})`;
     lastError = new Error(errMsg);
+    console.warn(
+      `API HTTP ${response.status} (attempt ${attempt + 1}/${maxAttempts}):`,
+      errMsg
+    );
     if (response.status >= 500 && attempt < retries) {
+      if (typeof onRetry === "function") onRetry();
       await sleep(retryDelayMs);
       continue;
     }
-    throw lastError;
+    throw new Error(API_MESSAGES.requestFailed);
   }
-  throw lastError || new Error("Request failed");
+  throw lastError || new Error(API_MESSAGES.requestFailed);
 }
 
 export function panelMarkup(html) {
