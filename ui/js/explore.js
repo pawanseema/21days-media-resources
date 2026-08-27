@@ -38,7 +38,8 @@ const EXAMPLE_PROMPTS = {
 };
 
 let searchMode = "videos";
-let uiConfig = { showResultDebug: true, enableMoreLikeThis: true };
+// Match mobile: production-safe until /api/ui-config loads (Cloud Run sets false).
+let uiConfig = { showResultDebug: false, enableMoreLikeThis: true };
 let currentVideoResults = [];
 let lastOpenedResult = null;
 let engagedSeed = null;
@@ -340,6 +341,10 @@ async function performSearch() {
         }),
       },
       {
+        onSlow: () => {
+          if ($("exploreLoadingText").textContent === API_MESSAGES.retrying) return;
+          $("exploreLoadingText").textContent = API_MESSAGES.takingLonger;
+        },
         onRetry: () => {
           $("exploreLoadingText").textContent = API_MESSAGES.retrying;
         },
@@ -396,6 +401,10 @@ async function fetchMoreLikeThis(seed) {
         body: JSON.stringify(body),
       },
       {
+        onSlow: () => {
+          if ($("exploreLoadingText").textContent === API_MESSAGES.retrying) return;
+          $("exploreLoadingText").textContent = API_MESSAGES.takingLonger;
+        },
         onRetry: () => {
           $("exploreLoadingText").textContent = API_MESSAGES.retrying;
         },

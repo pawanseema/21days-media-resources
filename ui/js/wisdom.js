@@ -45,9 +45,18 @@ export async function showWisdom() {
     panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>${escapeHtml(text)}</p></div>`;
   };
   setLoading("Loading wisdom topics…");
+  let waitPhase = "initial";
   try {
     const { data } = await fetchJson(WISDOM_URL, {}, {
-      onRetry: () => setLoading(API_MESSAGES.retrying),
+      onSlow: () => {
+        if (waitPhase === "retrying") return;
+        waitPhase = "slow";
+        setLoading(API_MESSAGES.takingLonger);
+      },
+      onRetry: () => {
+        waitPhase = "retrying";
+        setLoading(API_MESSAGES.retrying);
+      },
     });
     topicsCache = data;
     renderTopics(data);

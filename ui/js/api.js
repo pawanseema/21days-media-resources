@@ -99,24 +99,39 @@ export function countdownLabel(startsAt, isLive) {
 
 /**
  * POST/GET JSON. Retries transient failures up to [retries] times (default 2).
- * Calls [onRetry] before each retry so UIs can show a waiting message.
+ * [onSlow] fires after 30s while an attempt is still waiting (reassurance only).
+ * [onRetry] fires before each retry so UIs can show a waiting message.
  */
 export const API_MESSAGES = {
-  retrying: "Taking longer than usual. Trying again…",
+  takingLonger: "Taking longer than usual.",
+  tryingAgain: "Trying again…",
+  // Two lines; loading UIs use white-space: pre-line + text-align: center.
+  retrying: "Taking longer than usual.\nTrying again…",
   requestFailed:
     "Couldn't complete the request. Check your connection and try again.",
+  slowAfterMs: 30000,
 };
 
 export async function fetchJson(
   url,
   options = {},
-  { retries = 2, retryDelayMs = 450, onRetry } = {}
+  { retries = 2, retryDelayMs = 450, onRetry, onSlow } = {}
 ) {
   let lastError = null;
   const maxAttempts = retries + 1;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     let response;
+    let slowTimer = null;
     try {
+      if (typeof onSlow === "function") {
+        slowTimer = setTimeout(() => {
+          try {
+            onSlow();
+          } catch (_) {
+            /* ignore UI callback errors */
+          }
+        }, API_MESSAGES.slowAfterMs);
+      }
       response = await fetch(url, options);
     } catch (err) {
       lastError = err;
@@ -130,6 +145,8 @@ export async function fetchJson(
         continue;
       }
       throw new Error(API_MESSAGES.requestFailed);
+    } finally {
+      if (slowTimer != null) clearTimeout(slowTimer);
     }
 
     let data = {};

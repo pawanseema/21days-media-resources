@@ -105,18 +105,28 @@ export async function showLive() {
   let sessionData = { session: null };
   let recentData = { items: [] };
   let error = "";
+  let waitPhase = "initial";
 
-  const onRetry = () => setLoading(API_MESSAGES.retrying);
+  const onSlow = () => {
+    if (waitPhase === "retrying") return;
+    waitPhase = "slow";
+    setLoading(API_MESSAGES.takingLonger);
+  };
+  const onRetry = () => {
+    waitPhase = "retrying";
+    setLoading(API_MESSAGES.retrying);
+  };
 
   try {
-    const sessionRes = await fetchJson(SESSIONS_URL, {}, { onRetry });
+    const sessionRes = await fetchJson(SESSIONS_URL, {}, { onRetry, onSlow });
     sessionData = sessionRes.data;
   } catch (err) {
     error = API_MESSAGES.requestFailed;
   }
 
+  waitPhase = "initial";
   try {
-    const recentRes = await fetchJson(RECENT_URL, {}, { onRetry });
+    const recentRes = await fetchJson(RECENT_URL, {}, { onRetry, onSlow });
     recentData = recentRes.data;
   } catch (err) {
     if (!error) error = API_MESSAGES.requestFailed;

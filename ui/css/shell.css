@@ -139,6 +139,11 @@ a {
   color: var(--ink);
 }
 
+.panel-status p {
+  white-space: pre-line;
+  text-align: center;
+}
+
 .panel-status .spinner {
   margin: 0 auto 16px;
 }

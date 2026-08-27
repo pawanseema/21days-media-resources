@@ -59,9 +59,18 @@ export async function showRecordings() {
   };
   setLoading("Loading recordings…");
 
+  let waitPhase = "initial";
   try {
     const { data } = await fetchJson(RECORDINGS_URL, {}, {
-      onRetry: () => setLoading(API_MESSAGES.retrying),
+      onSlow: () => {
+        if (waitPhase === "retrying") return;
+        waitPhase = "slow";
+        setLoading(API_MESSAGES.takingLonger);
+      },
+      onRetry: () => {
+        waitPhase = "retrying";
+        setLoading(API_MESSAGES.retrying);
+      },
     });
     const sessions = (data.sessions || []).filter(
       (session) => Array.isArray(session.videos) && session.videos.some((v) => v && v.video_id)
