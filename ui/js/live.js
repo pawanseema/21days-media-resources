@@ -43,11 +43,9 @@ function sessionCard(session) {
          <div class="join-btn-row">
            <button type="button" class="join-btn" id="watchYoutube" ${hasYouTube ? "" : "disabled"}>
              <strong>Watch on YouTube</strong>
-             <small>Plays on this page</small>
            </button>
            <button type="button" class="join-btn outline" id="joinZoom" ${hasZoom ? "" : "disabled"}>
              <strong>Join Zoom Meeting</strong>
-             <small>Opens Zoom</small>
            </button>
          </div>
        </div>`
