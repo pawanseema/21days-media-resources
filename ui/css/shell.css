@@ -53,7 +53,9 @@ a {
   background: var(--chrome-bg);
   color: var(--title-ink);
   padding: 8px 20px 10px;
-  box-shadow: 0 2px 0 rgba(19, 59, 91, 0.14);
+  /* Mobile: yellow header shelves over blue content (nav is fixed at bottom). */
+  border-bottom: 1px solid var(--chrome-edge);
+  box-shadow: var(--chrome-shelf-down);
 }
 
 .header-portrait {
@@ -108,12 +110,30 @@ a {
   gap: 4px;
   padding: 6px 8px env(safe-area-inset-bottom, 0px);
   background: var(--nav-bg);
-  border-bottom: 1px solid rgba(19, 59, 91, 0.1);
+  /* Mobile: yellow nav shelves up over blue content. */
+  border-top: 1px solid var(--chrome-edge);
+  box-shadow: var(--chrome-shelf-up);
   position: fixed;
   left: 0;
   right: 0;
   bottom: 0;
   z-index: 50;
+}
+
+/* Soft fade just above the yellow bar (reads over opaque page content). */
+.main-nav::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: -10px;
+  height: 10px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    rgba(19, 59, 91, 0.11)
+  );
 }
 
 .main-nav a {
@@ -186,7 +206,7 @@ a {
 .error-banner,
 .empty-card,
 .surface-card {
-  background: rgba(255, 255, 255, 0.92);
+  background: var(--surface);
   border: 1px solid var(--mist);
   border-radius: 24px;
   padding: 18px 20px;
@@ -247,13 +267,27 @@ a {
     position: sticky;
   }
 
+  /* Desktop: title sits above nav; move the content ledge to the nav bottom. */
+  .title-bar {
+    border-bottom: 1px solid rgba(19, 59, 91, 0.08);
+    box-shadow: none;
+  }
+
   .main-nav {
     position: static;
     justify-content: center;
     gap: 8px;
     padding: 8px 20px 10px;
     max-width: none;
-    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+    border-top: none;
+    border-bottom: 1px solid var(--chrome-edge);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.7),
+      var(--chrome-shelf-down);
+  }
+
+  .main-nav::before {
+    display: none;
   }
 
   .main-nav a {

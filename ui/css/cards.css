@@ -104,7 +104,7 @@
 
 .example-chip {
   border: 1px solid var(--mist);
-  background: #f4f7fa;
+  background: var(--surface);
   color: var(--ink);
   border-radius: 999px;
   padding: 7px 12px;
@@ -163,7 +163,7 @@
 }
 
 .result-card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--mist);
   border-radius: var(--radius);
   overflow: hidden;
@@ -362,7 +362,7 @@
 }
 
 .join-btn.outline {
-  background: #fff;
+  background: var(--surface);
   color: var(--ink);
 }
 
@@ -378,7 +378,7 @@
 }
 
 .recent-list {
-  background: #fff;
+  background: var(--list-panel);
   border: 1px solid var(--mist);
   border-radius: 18px;
   padding: 6px 4px 8px;
@@ -389,7 +389,7 @@
 }
 
 .session-tile {
-  background: #fff;
+  background: var(--list-panel);
   border: 1px solid var(--mist);
   border-radius: 18px;
   margin-bottom: 12px;
@@ -430,7 +430,7 @@
 }
 
 .wisdom-card {
-  background: #fff;
+  background: var(--surface);
   border: 1px solid var(--mist);
   border-radius: 18px;
   margin-bottom: 12px;

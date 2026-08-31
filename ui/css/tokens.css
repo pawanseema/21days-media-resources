@@ -4,7 +4,9 @@
   --chrome-fg: #133b5b;
   --ink: #133b5b;
   --muted-ink: #3d5a73;
-  --surface: #fffff8;
+  /* Cool light blue — Explore chips / Upcoming panels (mobile + web). */
+  --surface: #f4f7fa;
+  --list-panel: #f4f7fa;
   --mist: #dae9ed;
   --accent: #f3d485;
   --accent-soft: #fffbee;
@@ -20,4 +22,8 @@
   --font-body: "Nunito", "Segoe UI", sans-serif;
   --nav-bg: #fffbee;
   --title-ink: #133b5b;
+  /* Yellow chrome → blue content ledge (Option 2, +10%). */
+  --chrome-edge: rgba(19, 59, 91, 0.154);
+  --chrome-shelf-down: 0 3.5px 9px rgba(19, 59, 91, 0.11);
+  --chrome-shelf-up: 0 -3.5px 9px rgba(19, 59, 91, 0.11);
 }
