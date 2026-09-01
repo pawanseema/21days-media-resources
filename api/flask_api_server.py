@@ -520,6 +520,12 @@ def index():
     return send_from_directory(UI_DIR, 'app.html')
 
 
+@app.route("/privacy")
+def privacy_page():
+    """Public privacy policy (App Store / Play Store URL)."""
+    return send_from_directory(UI_DIR, 'privacy.html')
+
+
 @app.route("/ui/<path:filename>")
 def ui_static(filename):
     """Serve static assets from the ui directory (images, etc.)."""
