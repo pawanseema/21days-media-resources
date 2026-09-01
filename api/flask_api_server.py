@@ -526,6 +526,12 @@ def privacy_page():
     return send_from_directory(UI_DIR, 'privacy.html')
 
 
+@app.route("/support")
+def support_page():
+    """Public support page (App Store Support URL)."""
+    return send_from_directory(UI_DIR, 'support.html')
+
+
 @app.route("/ui/<path:filename>")
 def ui_static(filename):
     """Serve static assets from the ui directory (images, etc.)."""
