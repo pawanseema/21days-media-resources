@@ -6,6 +6,7 @@ import {
   formatClipDuration,
 } from "./api.js";
 import { openPlayer } from "./player.js";
+import { copyLink, shareOrCopy } from "./share.js";
 
 const EXPLORE_API_URL = "/api/explore/query";
 const UI_CONFIG_URL = "/api/ui-config";
@@ -242,7 +243,8 @@ function createResourceCard(result) {
   const card = document.createElement("div");
   card.className = "result-card handout-card";
   card.addEventListener("click", () => {
-    if (result.download_url) window.open(result.download_url, "_blank", "noopener");
+    if (!result.download_url) return;
+    window.open(result.download_url, "_blank", "noopener");
   });
 
   let tagsArray = [];
@@ -267,8 +269,34 @@ function createResourceCard(result) {
         ? `<div class="meta-row">${tagsHtml}</div>`
         : ""}
       <div class="handout-open">Tap to open →</div>
+      <div
+        class="media-action-bar"
+        style="background: transparent; border-bottom: 0; padding: 0; margin-top: 12px;"
+      >
+        <button type="button" class="media-action-btn handout-share-btn">
+          <span class="media-action-icon" aria-hidden="true">↗</span>
+          Share
+        </button>
+        <button type="button" class="media-action-btn handout-copy-btn">
+          <span class="media-action-icon" aria-hidden="true">⧉</span>
+          Copy link
+        </button>
+      </div>
     </div>
   `;
+
+  const shareBtn = card.querySelector(".handout-share-btn");
+  shareBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    shareOrCopy({ url: result.download_url, title: result.title });
+  });
+
+  const copyBtn = card.querySelector(".handout-copy-btn");
+  copyBtn?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    copyLink(result.download_url);
+  });
+
   return card;
 }
 
