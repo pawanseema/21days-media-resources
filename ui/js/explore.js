@@ -42,11 +42,35 @@ let searchMode = "videos";
 // Match mobile: production-safe until /api/ui-config loads (Cloud Run sets false).
 let uiConfig = { showResultDebug: false, enableMoreLikeThis: true };
 let currentVideoResults = [];
+let currentHandoutResults = [];
 let lastOpenedResult = null;
 let engagedSeed = null;
 let relatedViewActive = false;
+let relatedSeed = null;
 let searchSnapshot = null;
 let bound = false;
+
+/** Last Explore session per mode (query + cards + video-only related). */
+const modeCache = {
+  videos: emptyVideoCache(),
+  resources: emptyHandoutCache(),
+};
+
+function emptyVideoCache() {
+  return {
+    query: "",
+    results: [],
+    relatedViewActive: false,
+    relatedSeed: null,
+    searchSnapshot: null,
+    engagedSeed: null,
+    lastOpenedResult: null,
+  };
+}
+
+function emptyHandoutCache() {
+  return { query: "", results: [] };
+}
 
 function $(id) {
   return document.getElementById(id);
@@ -95,13 +119,99 @@ function showCatalogBanner(mode, total) {
 }
 
 function showRelatedBanner(seed) {
+  relatedSeed = seed || null;
   const title = (seed && seed.section_title) || "this clip";
   $("relatedBannerText").innerHTML = `Showing more like: <span>${escapeHtml(title)}</span>`;
   $("relatedBanner").classList.add("visible");
 }
 
+function captureModeCache() {
+  if (searchMode === "videos") {
+    modeCache.videos = {
+      query: $("query").value,
+      results: [...currentVideoResults],
+      relatedViewActive,
+      relatedSeed,
+      searchSnapshot,
+      engagedSeed,
+      lastOpenedResult,
+    };
+  } else {
+    modeCache.resources = {
+      query: $("query").value,
+      results: [...currentHandoutResults],
+    };
+  }
+}
+
+function restoreModeCache(mode) {
+  hideMessages();
+  hideCatalogBanner();
+  $("exploreNoResults").querySelector("p").textContent =
+    "No results found. Try a different search query.";
+  $("exploreLoadingText").textContent =
+    mode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
+
+  if (mode === "videos") {
+    const cached = modeCache.videos || emptyVideoCache();
+    $("query").value = cached.query || "";
+    relatedViewActive = Boolean(cached.relatedViewActive);
+    relatedSeed = cached.relatedSeed || null;
+    searchSnapshot = cached.searchSnapshot || null;
+    engagedSeed = cached.engagedSeed || null;
+    lastOpenedResult = cached.lastOpenedResult || null;
+    currentVideoResults = [...(cached.results || [])];
+    if (relatedViewActive && relatedSeed) {
+      showRelatedBanner(relatedSeed);
+    } else {
+      hideRelatedBanner();
+    }
+    if (currentVideoResults.length > 0) {
+      displayResults(currentVideoResults, "videos");
+    } else {
+      $("exploreResults").innerHTML = "";
+      if ((cached.query || "").trim()) {
+        $("exploreNoResults").hidden = false;
+      }
+    }
+  } else {
+    const cached = modeCache.resources || emptyHandoutCache();
+    $("query").value = cached.query || "";
+    // Related UI is video-only; live flags stay off while viewing handouts.
+    relatedViewActive = false;
+    relatedSeed = null;
+    searchSnapshot = null;
+    engagedSeed = null;
+    lastOpenedResult = null;
+    hideRelatedBanner();
+    currentHandoutResults = [...(cached.results || [])];
+    if (currentHandoutResults.length > 0) {
+      displayResults(currentHandoutResults, "resources");
+    } else {
+      $("exploreResults").innerHTML = "";
+      if ((cached.query || "").trim()) {
+        $("exploreNoResults").hidden = false;
+      }
+    }
+  }
+  updateClearButton();
+  renderExamplePrompts();
+}
+
+function switchContext(mode) {
+  if (mode === searchMode) return;
+  captureModeCache();
+  searchMode = mode;
+  $("btnVideos").classList.toggle("active", mode === "videos");
+  $("btnHandouts").classList.toggle("active", mode === "resources");
+  $("query").placeholder = PLACEHOLDERS[mode];
+  $("exploreLoading").hidden = true;
+  restoreModeCache(mode);
+}
+
 function clearRelatedState() {
   relatedViewActive = false;
+  relatedSeed = null;
   searchSnapshot = null;
   engagedSeed = null;
   lastOpenedResult = null;
@@ -160,26 +270,6 @@ function hideMessages() {
   $("exploreError").innerHTML = "";
   $("exploreNoResults").hidden = true;
   $("exploreLoading").hidden = true;
-}
-
-function switchContext(mode) {
-  if (mode === searchMode) return;
-  searchMode = mode;
-  $("btnVideos").classList.toggle("active", mode === "videos");
-  $("btnHandouts").classList.toggle("active", mode === "resources");
-  $("query").value = "";
-  $("query").placeholder = PLACEHOLDERS[mode];
-  clearRelatedState();
-  currentVideoResults = [];
-  $("exploreResults").innerHTML = "";
-  hideMessages();
-  $("exploreNoResults").querySelector("p").textContent =
-    "No results found. Try a different search query.";
-  $("exploreLoadingText").textContent =
-    mode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
-  hideCatalogBanner();
-  updateClearButton();
-  renderExamplePrompts();
 }
 
 function createVideoCard(result) {
@@ -304,7 +394,25 @@ function displayResults(results, mode) {
   const container = $("exploreResults");
   container.innerHTML = "";
   const ordered = [...results].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
-  if (mode === "videos") currentVideoResults = ordered;
+  if (mode === "videos") {
+    currentVideoResults = ordered;
+    modeCache.videos = {
+      ...(modeCache.videos || emptyVideoCache()),
+      query: $("query").value,
+      results: ordered,
+      relatedViewActive,
+      relatedSeed,
+      searchSnapshot,
+      engagedSeed,
+      lastOpenedResult,
+    };
+  } else {
+    currentHandoutResults = ordered;
+    modeCache.resources = {
+      query: $("query").value,
+      results: ordered,
+    };
+  }
   ordered.forEach((result) => {
     container.appendChild(mode === "videos" ? createVideoCard(result) : createResourceCard(result));
   });
@@ -338,10 +446,19 @@ function openVideo(result) {
 }
 
 async function performSearch() {
+  const mode = searchMode;
   const query = $("query").value.trim();
-  clearRelatedState();
+  if (mode === "videos") {
+    clearRelatedState();
+  }
   hideCatalogBanner();
-  currentVideoResults = [];
+  if (mode === "videos") {
+    currentVideoResults = [];
+    modeCache.videos = { ...emptyVideoCache(), query };
+  } else {
+    currentHandoutResults = [];
+    modeCache.resources = { query, results: [] };
+  }
   $("exploreResults").innerHTML = "";
   hideMessages();
   $("exploreNoResults").querySelector("p").textContent =
@@ -352,7 +469,7 @@ async function performSearch() {
 
   $("exploreLoading").hidden = false;
   $("exploreLoadingText").textContent =
-    searchMode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
+    mode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
 
   try {
     const { data } = await fetchJson(
@@ -362,7 +479,7 @@ async function performSearch() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           query,
-          mode: searchMode,
+          mode,
           top_k: 5,
           limit: 100,
           offset: 0,
@@ -370,32 +487,50 @@ async function performSearch() {
       },
       {
         onSlow: () => {
+          if (searchMode !== mode) return;
           if ($("exploreLoadingText").textContent === API_MESSAGES.retrying) return;
           $("exploreLoadingText").textContent = API_MESSAGES.takingLonger;
         },
         onRetry: () => {
+          if (searchMode !== mode) return;
           $("exploreLoadingText").textContent = API_MESSAGES.retrying;
         },
       }
     );
+    const results = data.results || [];
+    if (mode === "videos") {
+      modeCache.videos = {
+        ...emptyVideoCache(),
+        query,
+        results: [...results],
+      };
+      currentVideoResults = [...results];
+    } else {
+      modeCache.resources = { query, results: [...results] };
+      currentHandoutResults = [...results];
+    }
+    if (searchMode !== mode) return;
+
     $("exploreLoading").hidden = true;
     if (data.intent === "list_catalog") {
-      showCatalogBanner(searchMode, data.total);
+      showCatalogBanner(mode, data.total);
       $("exploreLoadingText").textContent =
-        searchMode === "videos" ? "Loading videos…" : "Loading handouts…";
+        mode === "videos" ? "Loading videos…" : "Loading handouts…";
     }
-    if (data.results && data.results.length > 0) {
-      displayResults(data.results, searchMode);
+    if (results.length > 0) {
+      displayResults(results, mode);
     } else {
+      $("exploreResults").innerHTML = "";
       $("exploreNoResults").hidden = false;
       if (data.intent === "list_catalog") {
         $("exploreNoResults").querySelector("p").textContent =
-          searchMode === "resources"
+          mode === "resources"
             ? "No handouts are available yet."
             : "No videos are available yet.";
       }
     }
   } catch (err) {
+    if (searchMode !== mode) return;
     $("exploreLoading").hidden = true;
     showError(API_MESSAGES.requestFailed, { onRetry: performSearch });
   }
@@ -411,6 +546,7 @@ async function fetchMoreLikeThis(seed) {
   if (!relatedViewActive) {
     searchSnapshot = { query: $("query").value, results: [...currentVideoResults] };
   }
+  const snapshot = searchSnapshot;
   hideMessages();
   hideCatalogBanner();
   $("exploreLoading").hidden = false;
@@ -430,21 +566,37 @@ async function fetchMoreLikeThis(seed) {
       },
       {
         onSlow: () => {
+          if (searchMode !== "videos") return;
           if ($("exploreLoadingText").textContent === API_MESSAGES.retrying) return;
           $("exploreLoadingText").textContent = API_MESSAGES.takingLonger;
         },
         onRetry: () => {
+          if (searchMode !== "videos") return;
           $("exploreLoadingText").textContent = API_MESSAGES.retrying;
         },
       }
     );
+    const results = data.results || [];
+    const seedForBanner = data.seed || seed;
+    modeCache.videos = {
+      query: (snapshot && snapshot.query) || $("query").value,
+      results: [...results],
+      relatedViewActive: true,
+      relatedSeed: seedForBanner,
+      searchSnapshot: snapshot,
+      engagedSeed: null,
+      lastOpenedResult: null,
+    };
+    if (searchMode !== "videos") return;
+
     $("exploreLoading").hidden = true;
     relatedViewActive = true;
+    searchSnapshot = snapshot;
     engagedSeed = null;
-    showRelatedBanner(data.seed || seed);
+    showRelatedBanner(seedForBanner);
     updateChipVisibility();
-    if (data.results && data.results.length > 0) {
-      displayResults(data.results, "videos");
+    if (results.length > 0) {
+      displayResults(results, "videos");
     } else {
       currentVideoResults = [];
       $("exploreResults").innerHTML = "";
@@ -452,6 +604,7 @@ async function fetchMoreLikeThis(seed) {
       $("exploreNoResults").querySelector("p").textContent = "No similar segments found.";
     }
   } catch (err) {
+    if (searchMode !== "videos") return;
     $("exploreLoading").hidden = true;
     showError(API_MESSAGES.requestFailed, {
       onRetry: () => fetchMoreLikeThis(seed),
@@ -467,6 +620,7 @@ function backToSearch() {
   }
   const snapshot = searchSnapshot;
   relatedViewActive = false;
+  relatedSeed = null;
   searchSnapshot = null;
   engagedSeed = null;
   lastOpenedResult = null;
@@ -479,6 +633,7 @@ function backToSearch() {
     displayResults(snapshot.results, "videos");
   } else {
     currentVideoResults = [];
+    modeCache.videos = { ...emptyVideoCache(), query: snapshot.query };
     $("exploreResults").innerHTML = "";
   }
   updateClearButton();
@@ -495,9 +650,15 @@ export function initExplore() {
   $("query").addEventListener("input", updateClearButton);
   $("clearQuery").addEventListener("click", () => {
     $("query").value = "";
-    clearRelatedState();
+    if (searchMode === "videos") {
+      clearRelatedState();
+      currentVideoResults = [];
+      modeCache.videos = emptyVideoCache();
+    } else {
+      currentHandoutResults = [];
+      modeCache.resources = emptyHandoutCache();
+    }
     hideCatalogBanner();
-    currentVideoResults = [];
     $("exploreResults").innerHTML = "";
     hideMessages();
     updateClearButton();
