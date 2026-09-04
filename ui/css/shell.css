@@ -190,6 +190,37 @@ a {
   margin: 0 auto 16px;
 }
 
+.explore-idle {
+  padding: 40px 24px;
+}
+
+.explore-idle-icon {
+  width: 44px;
+  height: 44px;
+  margin: 0 auto 14px;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 18px;
+  color: rgba(19, 59, 91, 0.45);
+  background: rgba(19, 59, 91, 0.06);
+}
+
+.explore-idle-title {
+  margin: 0;
+  font-size: 1.15em;
+  font-weight: 800;
+  color: rgba(19, 59, 91, 0.88);
+}
+
+.explore-idle-subtitle {
+  margin: 8px auto 0;
+  max-width: 28rem;
+  font-size: 0.95em;
+  line-height: 1.4;
+  color: var(--muted-ink);
+}
+
 .muted {
   color: var(--muted-ink);
 }

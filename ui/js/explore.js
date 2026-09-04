@@ -17,6 +17,23 @@ const PLACEHOLDERS = {
   resources: "Search meditation handouts",
 };
 
+const IDLE_COPY = {
+  videos: {
+    iconHtml:
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M15 10l4.5-2.5v9L15 14"></path><rect x="3" y="6" width="12" height="12" rx="2"></rect></svg>',
+    title: "Find a meditation video to watch",
+    subtitle:
+      "Search above, or tap a suggestion, and matching clips will show up here.",
+  },
+  resources: {
+    iconHtml:
+      '<svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M8 4h9a2 2 0 0 1 2 2v14l-3-2-3 2-3-2-3 2V6a2 2 0 0 1 2-2z"></path><path d="M10 9h5M10 13h5"></path></svg>',
+    title: "Find a meditation handout to read",
+    subtitle:
+      "Search above, or tap a suggestion, and matching handouts will show up here.",
+  },
+};
+
 /** Video chips ordered shortest-first so wrap uses less vertical space. */
 const EXAMPLE_PROMPTS = {
   videos: [
@@ -196,6 +213,7 @@ function restoreModeCache(mode) {
   }
   updateClearButton();
   renderExamplePrompts();
+  updateIdleState();
 }
 
 function switchContext(mode) {
@@ -263,6 +281,7 @@ function showError(message, { onRetry } = {}) {
   if (retry && typeof onRetry === "function") {
     retry.addEventListener("click", onRetry);
   }
+  updateIdleState();
 }
 
 function hideMessages() {
@@ -270,6 +289,33 @@ function hideMessages() {
   $("exploreError").innerHTML = "";
   $("exploreNoResults").hidden = true;
   $("exploreLoading").hidden = true;
+}
+
+/** Idle guidance in the results area when there is nothing to show yet. */
+function updateIdleState() {
+  const idle = $("exploreIdle");
+  if (!idle) return;
+  const copy = IDLE_COPY[searchMode] || IDLE_COPY.videos;
+  const icon = $("exploreIdleIcon");
+  const title = $("exploreIdleTitle");
+  const subtitle = $("exploreIdleSubtitle");
+  if (icon) icon.innerHTML = copy.iconHtml;
+  if (title) title.textContent = copy.title;
+  if (subtitle) subtitle.textContent = copy.subtitle;
+
+  const hasQuery = Boolean($("query").value.trim());
+  const hasResults = $("exploreResults").children.length > 0;
+  const loading = !$("exploreLoading").hidden;
+  const noResults = !$("exploreNoResults").hidden;
+  const errorVisible = !$("exploreError").hidden;
+  const show =
+    !hasQuery &&
+    !hasResults &&
+    !loading &&
+    !noResults &&
+    !errorVisible &&
+    !relatedViewActive;
+  idle.hidden = !show;
 }
 
 function createVideoCard(result) {
@@ -417,6 +463,7 @@ function displayResults(results, mode) {
     container.appendChild(mode === "videos" ? createVideoCard(result) : createResourceCard(result));
   });
   updateChipVisibility();
+  updateIdleState();
 }
 
 function openVideo(result) {
@@ -464,12 +511,14 @@ async function performSearch() {
   $("exploreNoResults").querySelector("p").textContent =
     "No results found. Try a different search query.";
   updateChipVisibility();
+  updateIdleState();
 
   if (!query) return;
 
   $("exploreLoading").hidden = false;
   $("exploreLoadingText").textContent =
     mode === "videos" ? "Searching for relevant videos…" : "Searching handouts…";
+  updateIdleState();
 
   try {
     const { data } = await fetchJson(
@@ -528,6 +577,7 @@ async function performSearch() {
             ? "No handouts are available yet."
             : "No videos are available yet.";
       }
+      updateIdleState();
     }
   } catch (err) {
     if (searchMode !== mode) return;
@@ -551,6 +601,7 @@ async function fetchMoreLikeThis(seed) {
   hideCatalogBanner();
   $("exploreLoading").hidden = false;
   $("exploreLoadingText").textContent = "Finding similar clips…";
+  updateIdleState();
 
   const body = seed.chroma_id
     ? { id: seed.chroma_id, top_k: 5 }
@@ -602,6 +653,7 @@ async function fetchMoreLikeThis(seed) {
       $("exploreResults").innerHTML = "";
       $("exploreNoResults").hidden = false;
       $("exploreNoResults").querySelector("p").textContent = "No similar segments found.";
+      updateIdleState();
     }
   } catch (err) {
     if (searchMode !== "videos") return;
@@ -616,6 +668,7 @@ function backToSearch() {
   if (!searchSnapshot) {
     clearRelatedState();
     updateChipVisibility();
+    updateIdleState();
     return;
   }
   const snapshot = searchSnapshot;
@@ -635,6 +688,7 @@ function backToSearch() {
     currentVideoResults = [];
     modeCache.videos = { ...emptyVideoCache(), query: snapshot.query };
     $("exploreResults").innerHTML = "";
+    updateIdleState();
   }
   updateClearButton();
 }
@@ -662,10 +716,12 @@ export function initExplore() {
     $("exploreResults").innerHTML = "";
     hideMessages();
     updateClearButton();
+    updateIdleState();
   });
   $("backToSearchBtn").addEventListener("click", backToSearch);
   $("query").placeholder = PLACEHOLDERS[searchMode];
   renderExamplePrompts();
+  updateIdleState();
   loadUiConfig();
 }
 
@@ -676,5 +732,7 @@ export function showExplore(params) {
     $("query").value = q.trim();
     updateClearButton();
     performSearch();
+  } else {
+    updateIdleState();
   }
 }
