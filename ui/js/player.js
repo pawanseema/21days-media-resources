@@ -5,6 +5,7 @@ import {
   formatClipDuration,
   timestampToSeconds,
 } from "./api.js";
+import { copyLink, shareOrCopy } from "./share.js";
 
 const CHAPTERS_URL = (videoId) =>
   `/api/videos/${encodeURIComponent(videoId)}/chapters`;
@@ -12,6 +13,13 @@ const CHAPTERS_URL = (videoId) =>
 let onCloseCallback = null;
 let currentVideoId = "";
 let currentStart = 0;
+let currentShareTitle = "";
+
+function watchUrl(videoId, startSeconds) {
+  const t = Math.max(0, Number(startSeconds) || 0);
+  const base = `https://www.youtube.com/watch?v=${videoId}`;
+  return t > 0 ? `${base}&t=${t}s` : base;
+}
 
 function isMobileDevice() {
   return (
@@ -34,6 +42,10 @@ function setIframe(videoId, startSeconds) {
     `<iframe src="${embedUrl(videoId, startSeconds)}" ` +
     `allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share" ` +
     `allowfullscreen playsinline></iframe>`;
+}
+
+function currentLink() {
+  return watchUrl(currentVideoId, currentStart);
 }
 
 function renderChapters(chapters, activeSeconds) {
@@ -61,6 +73,8 @@ function renderChapters(chapters, activeSeconds) {
       const start = Number(btn.dataset.start) || 0;
       currentStart = start;
       setIframe(currentVideoId, start);
+      const youtubeLink = document.getElementById("openYoutube");
+      youtubeLink.href = currentLink();
       list.querySelectorAll(".chapter-row").forEach((row) => {
         row.classList.toggle("active", row === btn);
       });
@@ -82,6 +96,8 @@ export async function openPlayer({
 
   onCloseCallback = typeof onClose === "function" ? onClose : null;
   let start = startSeconds || timestampToSeconds(timestamp);
+  currentShareTitle =
+    [title, sectionTitle].filter(Boolean).join(" — ") || "Meditation video";
 
   const modal = document.getElementById("videoModal");
   const titleEl = document.getElementById("modalTitle");
@@ -91,10 +107,10 @@ export async function openPlayer({
   const heading = document.getElementById("chapterHeading");
   const list = document.getElementById("chapterList");
 
-  titleEl.textContent = [title, sectionTitle].filter(Boolean).join(" — ");
+  titleEl.textContent = currentShareTitle;
   metaTitle.textContent = title || "Meditation video";
   metaSection.textContent = sectionTitle || "";
-  youtubeLink.href = `https://www.youtube.com/watch?v=${currentVideoId}&t=${start}s`;
+  youtubeLink.href = watchUrl(currentVideoId, start);
   heading.hidden = true;
   list.innerHTML = "";
 
@@ -115,7 +131,7 @@ export async function openPlayer({
   }
   currentStart = start;
   setIframe(currentVideoId, start);
-  youtubeLink.href = `https://www.youtube.com/watch?v=${currentVideoId}&t=${start}s`;
+  youtubeLink.href = currentLink();
   renderChapters(chapters, start);
 }
 
@@ -134,6 +150,12 @@ export function initPlayer() {
   document.getElementById("playerClose").addEventListener("click", closePlayer);
   document.getElementById("videoModal").addEventListener("click", (event) => {
     if (event.target.id === "videoModal") closePlayer();
+  });
+  document.getElementById("playerShareBtn").addEventListener("click", () => {
+    shareOrCopy({ url: currentLink(), title: currentShareTitle });
+  });
+  document.getElementById("playerCopyBtn").addEventListener("click", () => {
+    copyLink(currentLink());
   });
   document.addEventListener("keydown", (event) => {
     if (event.key === "Escape") closePlayer();

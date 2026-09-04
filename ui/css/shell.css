@@ -61,6 +61,8 @@ a {
 .header-portrait {
   line-height: 0;
   flex-shrink: 0;
+  /* Mirror mobile: 0 flat / 1 medium / 2 strong (override via --portrait-depth). */
+  --pd: var(--portrait-depth, 1);
 }
 
 .header-portrait img {
@@ -69,7 +71,27 @@ a {
   height: 72px;
   max-width: 88px;
   object-fit: contain;
-  filter: drop-shadow(0 3px 8px rgba(0, 0, 0, 0.18));
+  /* Soft silhouette shadow; scales with --portrait-depth (2 ≈ +50% vs prior strong). */
+  filter: drop-shadow(
+      0
+      calc(3.75px * var(--pd))
+      calc(9.5px * var(--pd) + 2px)
+      rgba(0, 0, 0, calc(0.12 + 0.18 * var(--pd)))
+    );
+}
+
+.header-portrait[data-depth="0"] {
+  --pd: 0;
+}
+.header-portrait[data-depth="1"] {
+  --pd: 1;
+}
+.header-portrait[data-depth="2"] {
+  --pd: 2;
+}
+
+.header-portrait[data-depth="0"] img {
+  filter: none;
 }
 
 .header-text {

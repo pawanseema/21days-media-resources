@@ -15,7 +15,7 @@
 <body>
   <header class="site-header">
     <div class="title-bar">
-      <div class="header-portrait">
+      <div class="header-portrait" data-depth="2">
         <img
           src="/ui/Shri-Mataji-round-blue-shadow-white-name.png"
           alt="Shri Mataji"
@@ -95,6 +95,16 @@
         <button type="button" class="modal-close" id="playerClose" aria-label="Close">&times;</button>
       </div>
       <div class="player-frame" id="playerFrame"></div>
+      <div class="media-action-bar" id="playerActionBar">
+        <button type="button" class="media-action-btn" id="playerShareBtn">
+          <span class="media-action-icon" aria-hidden="true">↗</span>
+          Share
+        </button>
+        <button type="button" class="media-action-btn" id="playerCopyBtn">
+          <span class="media-action-icon" aria-hidden="true">⧉</span>
+          Copy link
+        </button>
+      </div>
       <div class="player-meta">
         <h2 id="playerVideoTitle"></h2>
         <p class="muted" id="playerSectionTitle"></p>
