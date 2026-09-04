@@ -26,4 +26,10 @@
   --chrome-edge: rgba(19, 59, 91, 0.154);
   --chrome-shelf-down: 0 3.5px 9px rgba(19, 59, 91, 0.11);
   --chrome-shelf-up: 0 -3.5px 9px rgba(19, 59, 91, 0.11);
+  /*
+   * Soft depth under Shri Mataji portrait (photo + baked-in name).
+   * 0 = flat, 1 = medium (default), 2 = strong.
+   * Change --portrait-depth only; shadow knobs scale from it.
+   */
+  --portrait-depth: 2;
 }
