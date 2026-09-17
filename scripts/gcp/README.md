@@ -92,6 +92,34 @@ deploy.sh  ──►  Artifact Registry image  ──►  Cloud Run revision
 ./scripts/gcp/deploy.sh --tag v1.2.0 --no-build
 ```
 
+### Keep one warm instance during App Store review
+
+Cold starts can make the mobile app look empty when Apple opens it for the first time. While review is in progress:
+
+1. Edit `scripts/gcp/config.env` (local, gitignored): `RUN_MIN_INSTANCES=1`
+2. Redeploy without rebuilding the image: `./scripts/gcp/deploy.sh --no-build`
+3. Verify min instances (Knative annotations — `template.scaling` is often null):
+
+```bash
+gcloud run services describe na21days-media-api \
+  --project=days-search-app \
+  --region=us-central1 \
+  --format='value(spec.template.metadata.annotations.autoscaling.knative.dev/minScale)'
+```
+
+Expect `1`. Max scale:
+
+```bash
+gcloud run services describe na21days-media-api \
+  --project=days-search-app \
+  --region=us-central1 \
+  --format='value(spec.template.metadata.annotations.autoscaling.knative.dev/maxScale)'
+```
+
+Expect roughly **$30–50/month** idle cost for 1Gi memory with min instances 1 (pro-rated for the review window).
+
+After approval, set `RUN_MIN_INSTANCES=0` and run `./scripts/gcp/deploy.sh --no-build` again.
+
 ## bootstrap.sh options
 
 ```bash
