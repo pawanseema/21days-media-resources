@@ -5,7 +5,12 @@ from flask import Flask, request, jsonify, redirect, send_from_directory
 # Add parent directory to path to import from search module
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from search.video_search import search_video_sections, recommend_related, list_video_chapters
+from search.video_search import (
+    search_video_sections,
+    recommend_related,
+    list_video_chapters,
+    recommend_daily_meditation,
+)
 from resources.resource_ingestion import ingest_resource, get_resource_by_id, update_resource
 from search.resource_search import search_resources
 from search.explore import run_explore_query
@@ -213,6 +218,53 @@ def api_videos_related():
         return jsonify({"error": msg}), 400
     except Exception as e:
         print(f"Error in videos related endpoint: {e}", flush=True)
+        import traceback
+        traceback.print_exc()
+        return jsonify({
+            "error": "Internal server error",
+            "message": str(e),
+        }), 500
+
+
+@app.route("/api/recommendations/daily-meditation", methods=["POST"])
+def api_daily_meditation():
+    """
+    Today's Meditation picker: one music-meditation section + practice duration.
+
+    Body: { "device_id": "<uuid>", "exclude": [{ "video_id", "timestamp" }], "limit"? }
+    Client owns stickiness / 6AM day rules / history; this endpoint is stateless.
+    """
+    try:
+        if not request.is_json:
+            return jsonify({"error": "Request must be JSON"}), 400
+
+        data = request.get_json() or {}
+        device_id = str(data.get("device_id") or "").strip()
+        if not device_id:
+            return jsonify({"error": "device_id is required"}), 400
+
+        exclude = data.get("exclude") or []
+        if exclude is None:
+            exclude = []
+        if not isinstance(exclude, list):
+            return jsonify({"error": "exclude must be a list"}), 400
+
+        limit = data.get("limit", 1)
+        if not isinstance(limit, int) or limit < 1:
+            limit = 1
+        # v1 only supports a single recommendation card.
+        _ = limit
+
+        payload = recommend_daily_meditation(
+            device_id=device_id,
+            exclude=exclude,
+        )
+        return jsonify(payload), 200
+
+    except ValueError as e:
+        return jsonify({"error": str(e)}), 400
+    except Exception as e:
+        print(f"Error in daily meditation endpoint: {e}", flush=True)
         import traceback
         traceback.print_exc()
         return jsonify({

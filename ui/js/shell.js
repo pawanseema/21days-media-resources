@@ -1,5 +1,6 @@
 import { showExplore } from "./explore.js";
 import { showLive } from "./live.js";
+import { showMore } from "./more.js";
 import { showRecordings } from "./recordings.js";
 import { showWisdom } from "./wisdom.js";
 
@@ -22,6 +23,10 @@ export const TABS = {
   wisdom: {
     id: "wisdom",
     label: "Wisdom",
+  },
+  more: {
+    id: "more",
+    label: "More",
   },
 };
 
@@ -74,6 +79,8 @@ async function applyRoute() {
     await showRecordings();
   } else if (tab === "wisdom" && SHOW_WISDOM_TAB) {
     await showWisdom();
+  } else if (tab === "more") {
+    await showMore();
   }
 }
 

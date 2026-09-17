@@ -1,11 +1,12 @@
 import os
 import sys
+import hashlib
 import chromadb
 from openai import OpenAI
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception
 import json
 import re
-from typing import Any, List, Dict
+from typing import Any, List, Dict, Optional, Tuple
 from collections import defaultdict
 
 # Add project root to Python path for config import
@@ -628,6 +629,152 @@ def _card_from_meta(meta: Dict, document: str, distance: float, chroma_id: str =
     if chroma_id:
         card["chroma_id"] = chroma_id
     return card
+
+
+def _is_music_meditation_title(title: str) -> bool:
+    """True for music-backed meditation chapters (Today's Meditation pool)."""
+    t = (title or "").casefold().strip()
+    if not t or t.startswith("intro music"):
+        return False
+    if "meditation with" in t and "music" in t:
+        return True
+    if "meditation" in t and "music" in t and "guided" not in t:
+        return True
+    return False
+
+
+def _is_guided_meditation_title(title: str) -> bool:
+    t = (title or "").casefold().strip()
+    return "guided meditation" in t
+
+
+def _exclude_key(video_id: str, timestamp: str) -> Tuple[str, str]:
+    return ((video_id or "").strip(), _normalize_timestamp(timestamp or ""))
+
+
+def _stable_pool_index(device_id: str, pool_size: int) -> int:
+    if pool_size <= 0:
+        return 0
+    raw = (device_id or "anonymous").strip() or "anonymous"
+    digest = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+    return int(digest[:16], 16) % pool_size
+
+
+def _find_next_guided(
+    sections_for_video: List[Dict[str, Any]],
+    music_start_seconds: int,
+) -> Optional[Dict[str, Any]]:
+    """First guided-meditation chapter after the music section on the same video."""
+    later = [
+        s
+        for s in sections_for_video
+        if int(s.get("start_seconds") or 0) > music_start_seconds
+    ]
+    for s in later:
+        if _is_guided_meditation_title(str(s.get("section_title") or "")):
+            return s
+    return None
+
+
+def recommend_daily_meditation(
+    device_id: str,
+    exclude: Optional[List[Dict[str, Any]]] = None,
+) -> Dict[str, Any]:
+    """
+    Pick one music-meditation timestamp section for Today's Meditation.
+
+    Stateless: client sends device_id (diversity) + exclude list (last ~21 clips).
+    Card includes practice_duration_seconds = music + next guided when available.
+    """
+    exclude_set = set()
+    for item in exclude or []:
+        if not isinstance(item, dict):
+            continue
+        vid = str(item.get("video_id") or "").strip()
+        ts = str(item.get("timestamp") or "").strip()
+        if vid and ts:
+            exclude_set.add(_exclude_key(vid, ts))
+
+    got = chroma_get(
+        where={"type": "timestamp_section"},
+        include=["metadatas", "documents"],
+    )
+    ids = got.get("ids") or []
+    metadatas = got.get("metadatas") or []
+    documents = got.get("documents") or []
+
+    by_video: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for i, meta in enumerate(metadatas):
+        meta = meta or {}
+        if _is_excluded_section(meta):
+            continue
+        vid = str(meta.get("video_id") or "").strip()
+        ts = str(meta.get("timestamp") or "").strip()
+        title = str(meta.get("section_title") or "").strip()
+        if not vid or not ts:
+            continue
+        chroma_id = ids[i] if i < len(ids) else None
+        document = documents[i] if i < len(documents) else ""
+        entry = {
+            "meta": meta,
+            "document": document or "",
+            "chroma_id": chroma_id,
+            "video_id": vid,
+            "timestamp": ts,
+            "section_title": title,
+            "start_seconds": _timestamp_to_seconds(ts),
+            "section_duration_seconds": _section_duration_seconds(meta),
+        }
+        by_video[vid].append(entry)
+
+    for vid in by_video:
+        by_video[vid].sort(key=lambda s: s["start_seconds"])
+
+    candidates: List[Dict[str, Any]] = []
+    for vid, sections in by_video.items():
+        for section in sections:
+            if not _is_music_meditation_title(section["section_title"]):
+                continue
+            if _exclude_key(section["video_id"], section["timestamp"]) in exclude_set:
+                continue
+            candidates.append(section)
+
+    candidates.sort(
+        key=lambda s: (s["video_id"], s["start_seconds"], s["timestamp"])
+    )
+
+    if not candidates:
+        return {"count": 0, "result": None}
+
+    pick = candidates[_stable_pool_index(device_id, len(candidates))]
+    card = _card_from_meta(
+        pick["meta"],
+        pick["document"],
+        distance=0.0,
+        chroma_id=pick.get("chroma_id"),
+    )
+    # Daily meditation is curated, not a similarity hit.
+    card["confidence"] = None
+
+    music_dur = pick.get("section_duration_seconds")
+    guided = _find_next_guided(
+        by_video.get(pick["video_id"]) or [],
+        pick["start_seconds"],
+    )
+    practice = music_dur
+    if guided is not None:
+        card["next_guided_section_title"] = guided.get("section_title") or ""
+        guided_dur = guided.get("section_duration_seconds")
+        if guided_dur is not None:
+            card["next_guided_duration_seconds"] = guided_dur
+            if music_dur is not None:
+                practice = int(music_dur) + int(guided_dur)
+            else:
+                practice = int(guided_dur)
+    if practice is not None:
+        card["practice_duration_seconds"] = int(practice)
+
+    return {"count": 1, "result": card}
 
 
 def _segment_focus_text(meta: Dict) -> str:

@@ -331,6 +331,7 @@ Uses **fused** scoring from `postprocess.py` (embedding + keyword + rank positio
 | GET | `/api/recordings` | Year playlist sliced into sessions |
 | GET | `/api/wisdom/topics` | Shared Wisdom tab topics |
 | GET | `/api/videos/<video_id>/chapters` | Chroma chapters for one video |
+| POST | `/api/recommendations/daily-meditation` | Today's Meditation clip (music section + practice duration) |
 | POST | `/api/videos/ingest` | Ingest one video by `video_id` (optional overwrite) |
 | POST | `/api/resources/ingest` | Create resource |
 | POST | `/api/resources/search` | Search resources |
