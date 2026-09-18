@@ -87,14 +87,33 @@ export function formatTime(iso) {
 export function countdownLabel(startsAt, isLive) {
   if (isLive) return "Happening now";
   if (!startsAt) return "Scheduled on YouTube";
-  const until = new Date(startsAt).getTime() - Date.now();
-  if (!Number.isFinite(until)) return "Scheduled on YouTube";
-  if (until <= 0) return "Starting soon";
-  const days = Math.floor(until / 86400000);
-  if (days >= 1) return `In ${days} day${days === 1 ? "" : "s"}`;
-  const hours = Math.floor(until / 3600000);
-  const minutes = Math.floor((until % 3600000) / 60000);
-  return `In ${hours}h ${minutes}m`;
+  const start = new Date(startsAt);
+  if (Number.isNaN(start.getTime())) return "Scheduled on YouTube";
+  const until = start.getTime() - Date.now();
+  if (until <= 0 || until < 60000) return "Starting soon";
+
+  const minutesTotal = Math.floor(until / 60000);
+  if (minutesTotal < 60) return `In ${minutesTotal} min`;
+
+  const now = new Date();
+  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const dayDiff = Math.round((startDay - today) / 86400000);
+  const timeLabel = formatTime(startsAt);
+
+  if (dayDiff <= 0) {
+    const hours = Math.floor(until / 3600000);
+    const minutes = Math.floor((until % 3600000) / 60000);
+    return `In ${hours}h ${minutes}m`;
+  }
+  if (dayDiff === 1) {
+    return timeLabel ? `Tomorrow · ${timeLabel}` : "Tomorrow";
+  }
+  if (dayDiff < 7) {
+    const weekday = start.toLocaleDateString(undefined, { weekday: "long" });
+    return timeLabel ? `${weekday} · ${timeLabel}` : weekday;
+  }
+  return `In ${dayDiff} day${dayDiff === 1 ? "" : "s"}`;
 }
 
 /**

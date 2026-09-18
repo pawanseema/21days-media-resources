@@ -191,17 +191,37 @@ a {
   list-style: none;
   cursor: pointer;
   padding: 14px 16px;
-  display: grid;
-  gap: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
 }
 
 .more-details > summary::-webkit-details-marker {
   display: none;
 }
 
+.more-details > summary::after {
+  content: "";
+  flex-shrink: 0;
+  width: 0.55em;
+  height: 0.55em;
+  border-right: 2.5px solid var(--ink);
+  border-bottom: 2.5px solid var(--ink);
+  transform: rotate(45deg);
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+  margin-top: -0.15em;
+}
+
+.more-details[open] > summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.2em;
+}
+
 .more-summary-title {
   font-family: var(--font-display);
-  font-size: 1.15rem;
+  font-size: 1.2rem;
   font-weight: 600;
 }
 
@@ -214,11 +234,23 @@ a {
 }
 
 .more-guidance {
-  margin: 0 0 12px;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: linear-gradient(
+    165deg,
+    rgba(198, 228, 253, 0.46) 0%,
+    rgba(165, 199, 223, 0.27) 100%
+  );
+  border: 1px solid rgba(165, 199, 223, 0.36);
+  box-shadow:
+    0 1px 0 rgba(255, 255, 255, 0.65) inset,
+    0 6px 14px rgba(19, 59, 91, 0.12),
+    0 2px 4px rgba(19, 59, 91, 0.08);
   color: var(--ink);
-  line-height: 1.4;
-  font-size: 1.05rem;
-  font-weight: 700;
+  line-height: 1.45;
+  font-size: 0.95rem;
+  font-weight: 400;
 }
 
 .more-card-host {

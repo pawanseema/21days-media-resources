@@ -12,6 +12,31 @@ import { openPlayer } from "./player.js";
 const SESSIONS_URL = "/api/live/sessions";
 const RECENT_URL = "/api/live/recent";
 
+/** Refresh relative countdown without refetching the API. */
+let countdownTimer = null;
+
+function clearCountdownTimer() {
+  if (countdownTimer != null) {
+    clearInterval(countdownTimer);
+    countdownTimer = null;
+  }
+}
+
+export { clearCountdownTimer };
+
+function startCountdownTimer(startsAt, isLive) {
+  clearCountdownTimer();
+  if (!startsAt || isLive) return;
+  countdownTimer = setInterval(() => {
+    const el = document.getElementById("liveCountdown");
+    if (!el) {
+      clearCountdownTimer();
+      return;
+    }
+    el.textContent = countdownLabel(startsAt, false);
+  }, 30000);
+}
+
 function openYouTube(item) {
   const videoId = (item.video_id || "").trim();
   if (!videoId) {
@@ -58,7 +83,7 @@ function sessionCard(session) {
       ${channel ? `<div class="meta-line">${escapeHtml(channel)}</div>` : ""}
       ${dateLabel ? `<div class="meta-line">${escapeHtml(dateLabel)}</div>` : ""}
       ${timeLabel ? `<div class="meta-line">${escapeHtml(timeLabel)}</div>` : ""}
-      <div class="meta-line">${escapeHtml(countdown)}</div>
+      <div class="meta-line" id="liveCountdown">${escapeHtml(countdown)}</div>
       ${actions}
     </article>
   `;
@@ -95,6 +120,7 @@ function recentCard(item) {
 
 export async function showLive() {
   const panel = document.getElementById("panel-live");
+  clearCountdownTimer();
   const setLoading = (text) => {
     panel.innerHTML = `<div class="panel-status"><div class="spinner"></div><p>${escapeHtml(text)}</p></div>`;
   };
@@ -166,4 +192,8 @@ export async function showLive() {
   panel.querySelectorAll("[data-recent-id]").forEach((card, index) => {
     card.addEventListener("click", () => openYouTube(items[index]));
   });
+
+  if (session) {
+    startCountdownTimer(session.starts_at, session.status === "live");
+  }
 }

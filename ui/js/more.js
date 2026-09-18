@@ -161,7 +161,7 @@ export async function showMore() {
     <div class="more-section">
       <details class="more-details" open>
         <summary>
-          <span class="more-summary-title">Today's Meditation Practice Video</span>
+          <span class="more-summary-title">Today's Meditation</span>
         </summary>
         <div class="more-details-body">
           <p class="more-guidance">

@@ -400,6 +400,10 @@
   list-style: none;
   cursor: pointer;
   padding: 16px;
+  display: grid;
+  grid-template-columns: 1fr auto;
+  column-gap: 12px;
+  align-items: center;
 }
 
 .session-tile summary::-webkit-details-marker {
@@ -411,6 +415,32 @@
   font-size: 1.2rem;
   font-family: var(--font-display);
   font-weight: 600;
+  grid-column: 1;
+}
+
+.session-tile summary > p {
+  grid-column: 1;
+}
+
+.session-tile summary::after {
+  content: "";
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  width: 0.55em;
+  height: 0.55em;
+  border-right: 2.5px solid var(--ink);
+  border-bottom: 2.5px solid var(--ink);
+  transform: rotate(45deg);
+  opacity: 0.55;
+  transition: transform 0.15s ease;
+  justify-self: end;
+  align-self: center;
+  margin-top: -0.15em;
+}
+
+.session-tile[open] summary::after {
+  transform: rotate(-135deg);
+  margin-top: 0.2em;
 }
 
 .session-video {

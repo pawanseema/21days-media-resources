@@ -1,5 +1,5 @@
 import { showExplore } from "./explore.js";
-import { showLive } from "./live.js";
+import { clearCountdownTimer, showLive } from "./live.js";
 import { showMore } from "./more.js";
 import { showRecordings } from "./recordings.js";
 import { showWisdom } from "./wisdom.js";
@@ -70,6 +70,10 @@ async function applyRoute() {
     history.replaceState(null, "", canonicalHash(tab, params));
   }
   setActive(tab);
+
+  if (tab !== "live") {
+    clearCountdownTimer();
+  }
 
   if (tab === "live") {
     await showLive();
