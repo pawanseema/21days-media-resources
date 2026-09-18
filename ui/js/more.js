@@ -46,16 +46,29 @@ function loadState() {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) {
-      const state = { deviceId: newDeviceId(), active: null, history: [] };
+      const state = {
+        deviceId: newDeviceId(),
+        active: null,
+        history: [],
+        sectionExpanded: true,
+      };
       saveState(state);
       return state;
     }
     const parsed = JSON.parse(raw);
     if (!parsed.deviceId) parsed.deviceId = newDeviceId();
     if (!Array.isArray(parsed.history)) parsed.history = [];
+    if (typeof parsed.sectionExpanded !== "boolean") {
+      parsed.sectionExpanded = true;
+    }
     return parsed;
   } catch (_) {
-    const state = { deviceId: newDeviceId(), active: null, history: [] };
+    const state = {
+      deviceId: newDeviceId(),
+      active: null,
+      history: [],
+      sectionExpanded: true,
+    };
     saveState(state);
     return state;
   }
@@ -157,22 +170,30 @@ export async function showMore() {
   if (!panel) return;
 
   let state = loadState();
+  const expandedAttr = state.sectionExpanded === false ? "" : " open";
   panel.innerHTML = `
     <div class="more-section">
-      <details class="more-details" open>
+      <details class="more-details"${expandedAttr}>
         <summary>
           <span class="more-summary-title">Today's Meditation</span>
         </summary>
         <div class="more-details-body">
           <p class="more-guidance">
-            Find a quiet place. Sit comfortably and relaxed.
-            When you feel settled, click to play the meditation video below.
+            Find a quiet, peaceful space and settle into a comfortable, relaxed position.
+            When you feel ready, press play to begin your meditation video.
           </p>
           <div id="moreCardHost" class="panel-status">Loading…</div>
         </div>
       </details>
     </div>
   `;
+
+  const details = panel.querySelector(".more-details");
+  details?.addEventListener("toggle", () => {
+    const next = loadState();
+    next.sectionExpanded = details.open;
+    saveState(next);
+  });
 
   const host = document.getElementById("moreCardHost");
 

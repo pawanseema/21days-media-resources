@@ -325,6 +325,7 @@ def _enrich_live_details(youtube, rows: List[Dict[str, Any]]) -> List[Dict[str, 
                 or "",
                 "starts_at": starts,
                 "actual_start_at": actual_start,
+                "scheduled_start_at": scheduled_start,
                 "actual_end_at": actual_end,
                 "scheduled_end_at": scheduled_end,
                 "ends_at": actual_end or scheduled_end,
@@ -575,6 +576,24 @@ def _latest_completed_for_channel(
     )
 
 
+def _playback_start_seconds(row: Dict[str, Any]) -> int:
+    """
+    Seconds into the VOD where the scheduled session begins.
+
+    Streams often go live a few minutes early; skip that idle head so replay
+    opens near the advertised start (capped for bad YouTube timestamps).
+    """
+    actual = row.get("actual_start_at")
+    scheduled = row.get("scheduled_start_at")
+    if not isinstance(actual, datetime) or not isinstance(scheduled, datetime):
+        return 0
+    delta = int((scheduled - actual).total_seconds())
+    if delta < 30:
+        return 0
+    # Guard against bad metadata (typical early-start window is 5–15 minutes).
+    return min(delta, 30 * 60)
+
+
 def _recent_recording_payload(
     *,
     row: Dict[str, Any],
@@ -584,7 +603,10 @@ def _recent_recording_payload(
     starts = row.get("starts_at")
     ends = row.get("ends_at")
     published = _parse_yt_time(row.get("published_at"))
+    actual = row.get("actual_start_at")
+    scheduled = row.get("scheduled_start_at")
     video_id = row["video_id"]
+    playback_start = _playback_start_seconds(row)
     return {
         "id": f"ended_{video_id}",
         "status": "ended",
@@ -597,8 +619,13 @@ def _recent_recording_payload(
         or "",
         "channel_handle": channel_meta.get("handle") or "",
         "starts_at": starts.isoformat() if isinstance(starts, datetime) else None,
+        "actual_start_at": actual.isoformat() if isinstance(actual, datetime) else None,
+        "scheduled_start_at": (
+            scheduled.isoformat() if isinstance(scheduled, datetime) else None
+        ),
         "ends_at": ends.isoformat() if isinstance(ends, datetime) else None,
         "published_at": published.isoformat() if isinstance(published, datetime) else None,
+        "playback_start_seconds": playback_start,
         "youtube_watch_url": _watch_url(video_id),
         "youtube_thumbnail_url": row.get("thumbnail_url") or "",
     }

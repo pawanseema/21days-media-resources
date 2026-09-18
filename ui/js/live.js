@@ -43,11 +43,13 @@ function openYouTube(item) {
     if (item.youtube_live_url) window.open(item.youtube_live_url, "_blank", "noopener");
     return;
   }
+  const startSeconds = Math.max(0, Number(item.playback_start_seconds) || 0);
   openPlayer({
     videoId,
     title: item.title || "Sahaja Yoga meditation",
     sectionTitle: item.channel_title || item.channel_handle || "",
     url: item.youtube_live_url || item.youtube_watch_url,
+    startSeconds,
   });
 }
 
