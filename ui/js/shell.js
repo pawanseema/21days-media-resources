@@ -7,6 +7,9 @@ import { showWisdom } from "./wisdom.js";
 /** Flip to true to restore the Wisdom tab in the main nav. */
 export const SHOW_WISDOM_TAB = false;
 
+/** Flip to true to restore the More tab (Today's Meditation also lives on Explore). */
+export const SHOW_MORE_TAB = false;
+
 export const TABS = {
   live: {
     id: "live",
@@ -30,12 +33,18 @@ export const TABS = {
   },
 };
 
+function tabAllowed(tab) {
+  if (tab === "wisdom" && !SHOW_WISDOM_TAB) return false;
+  if (tab === "more" && !SHOW_MORE_TAB) return false;
+  return Boolean(TABS[tab]);
+}
+
 export function parseHash() {
   const raw = (location.hash || "#/explore").replace(/^#/, "");
   const [pathPart, queryPart] = raw.split("?");
   let tab = (pathPart.replace(/^\//, "").split("/")[0] || "explore").toLowerCase();
   const params = new URLSearchParams(queryPart || "");
-  if (!TABS[tab] || (tab === "wisdom" && !SHOW_WISDOM_TAB)) {
+  if (!tabAllowed(tab)) {
     tab = "explore";
   }
   return { tab, params };
@@ -43,11 +52,13 @@ export function parseHash() {
 
 function setActive(tab) {
   document.querySelectorAll(".main-nav a").forEach((link) => {
-    const isWisdom = link.dataset.tab === "wisdom";
-    if (isWisdom) {
+    const name = link.dataset.tab;
+    if (name === "wisdom") {
       link.hidden = !SHOW_WISDOM_TAB;
+    } else if (name === "more") {
+      link.hidden = !SHOW_MORE_TAB;
     }
-    link.classList.toggle("active", link.dataset.tab === tab);
+    link.classList.toggle("active", name === tab);
   });
   document.querySelectorAll(".tab-panel").forEach((panel) => {
     panel.hidden = panel.id !== `panel-${tab}`;
@@ -62,11 +73,7 @@ function canonicalHash(tab, params) {
 async function applyRoute() {
   const { tab, params } = parseHash();
   const rawTab = (location.hash.replace(/^#\/?/, "").split("?")[0] || "").toLowerCase();
-  if (
-    !location.hash ||
-    !TABS[rawTab] ||
-    (rawTab === "wisdom" && !SHOW_WISDOM_TAB)
-  ) {
+  if (!location.hash || !tabAllowed(rawTab)) {
     history.replaceState(null, "", canonicalHash(tab, params));
   }
   setActive(tab);
@@ -83,7 +90,7 @@ async function applyRoute() {
     await showRecordings();
   } else if (tab === "wisdom" && SHOW_WISDOM_TAB) {
     await showWisdom();
-  } else if (tab === "more") {
+  } else if (tab === "more" && SHOW_MORE_TAB) {
     await showMore();
   }
 }

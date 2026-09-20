@@ -5,6 +5,16 @@ import {
   fetchJson,
   formatClipDuration,
 } from "./api.js";
+import {
+  DAILY_MEDITATION_QUERY,
+  DAILY_PLAYED_SUBTITLE,
+  DAILY_RESULT_TITLE,
+  GUIDANCE_TEXT,
+  bindMeditationPlay,
+  ensureActiveMeditation,
+  isDailyMeditationQuery,
+  renderMeditationCard,
+} from "./daily_meditation.js";
 import { openPlayer } from "./player.js";
 import { copyLink, shareOrCopy } from "./share.js";
 
@@ -65,6 +75,8 @@ let engagedSeed = null;
 let relatedViewActive = false;
 let relatedSeed = null;
 let searchSnapshot = null;
+/** Sticky daily-meditation mode (chip or exact typed query). */
+let dailyMeditationActive = false;
 let bound = false;
 
 /** Last Explore session per mode (query + cards + video-only related). */
@@ -82,6 +94,7 @@ function emptyVideoCache() {
     searchSnapshot: null,
     engagedSeed: null,
     lastOpenedResult: null,
+    dailyMeditationActive: false,
   };
 }
 
@@ -152,6 +165,7 @@ function captureModeCache() {
       searchSnapshot,
       engagedSeed,
       lastOpenedResult,
+      dailyMeditationActive,
     };
   } else {
     modeCache.resources = {
@@ -177,13 +191,16 @@ function restoreModeCache(mode) {
     searchSnapshot = cached.searchSnapshot || null;
     engagedSeed = cached.engagedSeed || null;
     lastOpenedResult = cached.lastOpenedResult || null;
+    dailyMeditationActive = Boolean(cached.dailyMeditationActive);
     currentVideoResults = [...(cached.results || [])];
     if (relatedViewActive && relatedSeed) {
       showRelatedBanner(relatedSeed);
     } else {
       hideRelatedBanner();
     }
-    if (currentVideoResults.length > 0) {
+    if (dailyMeditationActive && (cached.query || "").trim()) {
+      void activateDailyMeditation(cached.query);
+    } else if (currentVideoResults.length > 0) {
       displayResults(currentVideoResults, "videos");
     } else {
       $("exploreResults").innerHTML = "";
@@ -200,6 +217,7 @@ function restoreModeCache(mode) {
     searchSnapshot = null;
     engagedSeed = null;
     lastOpenedResult = null;
+    dailyMeditationActive = false;
     hideRelatedBanner();
     currentHandoutResults = [...(cached.results || [])];
     if (currentHandoutResults.length > 0) {
@@ -247,18 +265,107 @@ function renderExamplePrompts() {
     btn.addEventListener("click", () => applyExamplePrompt(text));
     chips.appendChild(btn);
   });
+  if (searchMode === "videos") {
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "example-chip example-chip--daily";
+    btn.setAttribute("aria-label", DAILY_MEDITATION_QUERY);
+    btn.innerHTML = `
+      <span class="example-chip-icon" aria-hidden="true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="8" r="3"></circle>
+          <path d="M6 20c0-3.3 2.7-6 6-6s6 2.7 6 6"></path>
+        </svg>
+      </span>
+      <span>${escapeHtml(DAILY_MEDITATION_QUERY)}</span>`;
+    btn.addEventListener("click", () => activateDailyMeditation());
+    chips.appendChild(btn);
+  }
   updateChipVisibility();
 }
 
 function updateChipVisibility() {
   const empty = !$("query").value.trim();
-  $("examplePrompts").hidden = !(empty && !relatedViewActive);
+  $("examplePrompts").hidden = !(empty && !relatedViewActive && !dailyMeditationActive);
 }
 
 function applyExamplePrompt(text) {
   $("query").value = text;
   updateClearButton();
   performSearch();
+}
+
+async function activateDailyMeditation(queryText) {
+  const label =
+    queryText && String(queryText).trim()
+      ? String(queryText).trim()
+      : DAILY_MEDITATION_QUERY;
+  const mode = "videos";
+  if (searchMode !== "videos") {
+    switchContext("videos");
+  }
+  $("query").value = label;
+  dailyMeditationActive = true;
+  clearRelatedState();
+  hideCatalogBanner();
+  currentVideoResults = [];
+  modeCache.videos = {
+    ...emptyVideoCache(),
+    query: label,
+    dailyMeditationActive: true,
+  };
+  $("exploreResults").innerHTML = "";
+  hideMessages();
+  updateClearButton();
+  updateIdleState();
+
+  $("exploreLoading").hidden = false;
+  $("exploreLoadingText").textContent = "Loading today’s meditation…";
+  updateIdleState();
+
+  try {
+    const { state, card } = await ensureActiveMeditation();
+    if (searchMode !== mode || !dailyMeditationActive) return;
+    $("exploreLoading").hidden = true;
+    displayDailyMeditation(state, card);
+  } catch (err) {
+    if (searchMode !== mode || !dailyMeditationActive) return;
+    $("exploreLoading").hidden = true;
+    const message =
+      err?.code === "empty"
+        ? "No meditation recommendation is available right now."
+        : "Could not load today’s meditation.";
+    showError(message, { onRetry: () => activateDailyMeditation(label) });
+  }
+}
+
+function displayDailyMeditation(state, card) {
+  const container = $("exploreResults");
+  const played = Boolean(state?.active?.playedAt);
+  container.innerHTML = `
+    <div class="explore-daily-block">
+      <h2 class="explore-daily-title">${escapeHtml(DAILY_RESULT_TITLE)}</h2>
+      ${
+        played
+          ? `<p class="explore-daily-played">${escapeHtml(DAILY_PLAYED_SUBTITLE)}</p>`
+          : ""
+      }
+      <p class="explore-daily-guidance">${escapeHtml(GUIDANCE_TEXT)}</p>
+      <div class="explore-daily-card-host"></div>
+    </div>
+  `;
+  const host = container.querySelector(".explore-daily-card-host");
+  host.innerHTML = renderMeditationCard(card);
+  bindMeditationPlay(host, state, card, {
+    onPlayed: (next) => displayDailyMeditation(next, card),
+  });
+  modeCache.videos = {
+    ...emptyVideoCache(),
+    query: $("query").value,
+    dailyMeditationActive: true,
+  };
+  updateChipVisibility();
+  updateIdleState();
 }
 
 function updateClearButton() {
@@ -314,7 +421,8 @@ function updateIdleState() {
     !loading &&
     !noResults &&
     !errorVisible &&
-    !relatedViewActive;
+    !relatedViewActive &&
+    !dailyMeditationActive;
   idle.hidden = !show;
 }
 
@@ -441,6 +549,7 @@ function displayResults(results, mode) {
   container.innerHTML = "";
   const ordered = [...results].sort((a, b) => (b.confidence || 0) - (a.confidence || 0));
   if (mode === "videos") {
+    dailyMeditationActive = false;
     currentVideoResults = ordered;
     modeCache.videos = {
       ...(modeCache.videos || emptyVideoCache()),
@@ -451,6 +560,7 @@ function displayResults(results, mode) {
       searchSnapshot,
       engagedSeed,
       lastOpenedResult,
+      dailyMeditationActive: false,
     };
   } else {
     currentHandoutResults = ordered;
@@ -495,6 +605,13 @@ function openVideo(result) {
 async function performSearch() {
   const mode = searchMode;
   const query = $("query").value.trim();
+
+  if (mode === "videos" && isDailyMeditationQuery(query)) {
+    await activateDailyMeditation(query);
+    return;
+  }
+
+  dailyMeditationActive = false;
   if (mode === "videos") {
     clearRelatedState();
   }
@@ -637,6 +754,7 @@ async function fetchMoreLikeThis(seed) {
       searchSnapshot: snapshot,
       engagedSeed: null,
       lastOpenedResult: null,
+      dailyMeditationActive: false,
     };
     if (searchMode !== "videos") return;
 
@@ -706,6 +824,7 @@ export function initExplore() {
     $("query").value = "";
     if (searchMode === "videos") {
       clearRelatedState();
+      dailyMeditationActive = false;
       currentVideoResults = [];
       modeCache.videos = emptyVideoCache();
     } else {
