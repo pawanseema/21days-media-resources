@@ -12,7 +12,8 @@ import { openPlayer } from "./player.js";
 const SESSIONS_URL = "/api/live/sessions";
 const RECENT_URL = "/api/live/recent";
 
-/** Refresh relative countdown without refetching the API. */
+/** Refresh relative countdown without refetching the API (Upcoming tab only). */
+const COUNTDOWN_TICK_MS = 5 * 60 * 1000;
 let countdownTimer = null;
 
 function clearCountdownTimer() {
@@ -27,6 +28,7 @@ export { clearCountdownTimer };
 function startCountdownTimer(startsAt, isLive) {
   clearCountdownTimer();
   if (!startsAt || isLive) return;
+  // shell.js clears this when navigating away from Upcoming.
   countdownTimer = setInterval(() => {
     const el = document.getElementById("liveCountdown");
     if (!el) {
@@ -34,7 +36,7 @@ function startCountdownTimer(startsAt, isLive) {
       return;
     }
     el.textContent = countdownLabel(startsAt, false);
-  }, 30000);
+  }, COUNTDOWN_TICK_MS);
 }
 
 function openYouTube(item) {

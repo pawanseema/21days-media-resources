@@ -95,25 +95,15 @@ export function countdownLabel(startsAt, isLive) {
   const minutesTotal = Math.floor(until / 60000);
   if (minutesTotal < 60) return `In ${minutesTotal} min`;
 
-  const now = new Date();
-  const startDay = new Date(start.getFullYear(), start.getMonth(), start.getDate());
-  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  const dayDiff = Math.round((startDay - today) / 86400000);
-  const timeLabel = formatTime(startsAt);
-
-  if (dayDiff <= 0) {
-    const hours = Math.floor(until / 3600000);
+  const hoursTotal = Math.floor(until / 3600000);
+  if (hoursTotal < 48) {
+    const hours = hoursTotal;
     const minutes = Math.floor((until % 3600000) / 60000);
     return `In ${hours}h ${minutes}m`;
   }
-  if (dayDiff === 1) {
-    return timeLabel ? `Tomorrow · ${timeLabel}` : "Tomorrow";
-  }
-  if (dayDiff < 7) {
-    const weekday = start.toLocaleDateString(undefined, { weekday: "long" });
-    return timeLabel ? `${weekday} · ${timeLabel}` : weekday;
-  }
-  return `In ${dayDiff} day${dayDiff === 1 ? "" : "s"}`;
+
+  const days = Math.max(2, Math.floor(until / 86400000));
+  return `In ${days} days`;
 }
 
 /**
