@@ -72,9 +72,18 @@ export async function showRecordings() {
         setLoading(API_MESSAGES.retrying);
       },
     });
-    const sessions = (data.sessions || []).filter(
-      (session) => Array.isArray(session.videos) && session.videos.some((v) => v && v.video_id)
-    );
+    const sessions = (data.sessions || [])
+      .filter(
+        (session) =>
+          Array.isArray(session.videos) &&
+          session.videos.some((v) => v && v.video_id)
+      )
+      .slice()
+      .sort((a, b) => {
+        const aKey = a.starts_at || a.ends_at || "";
+        const bKey = b.starts_at || b.ends_at || "";
+        return bKey.localeCompare(aKey);
+      });
     if (!sessions.length) {
       panel.innerHTML = `<div class="panel-status"><p>No recordings are configured yet.</p></div>`;
       return;

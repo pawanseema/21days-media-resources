@@ -1,9 +1,10 @@
 """
 Year playlist recordings for the 21Days mobile Recordings tab.
 
-Config lists years with a YouTube playlist id and ordered sessions (video
-counts plus optional start_date / end_date calendar windows). Videos are
-sorted oldest-first and sliced into those sessions.
+Config lists years with a YouTube playlist id and sessions (video counts
+plus optional start_date / end_date calendar windows). Videos are sorted
+oldest-first and sliced into those sessions; the API returns sessions
+newest-first (by start_date).
 """
 
 from __future__ import annotations
@@ -259,6 +260,15 @@ def resolve_year_recordings(
             f"year_recordings: omitting {extra} playlist videos beyond session counts",
             flush=True,
         )
+
+    # Config is usually chronological; present most recent session first.
+    sessions_out.sort(
+        key=lambda s: (
+            s.get("starts_at") or s.get("ends_at") or "",
+            s.get("id") or "",
+        ),
+        reverse=True,
+    )
 
     payload = {
         "year": int(year_cfg.get("year") or 0),

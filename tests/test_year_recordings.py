@@ -137,7 +137,8 @@ class YearRecordingsTests(unittest.TestCase):
         self.config_path = Path(self.tmp.name)
 
     def test_slices_oldest_first_by_session_counts(self):
-        # hours_ago: larger = older
+        # hours_ago: larger = older. Playlist is sliced oldest→newest into sessions,
+        # then sessions are returned newest-first for the Recordings UI.
         items = [
             _item("new", "Newest", 1),
             _item("old", "Oldest", 40),
@@ -150,20 +151,26 @@ class YearRecordingsTests(unittest.TestCase):
             use_cache=False,
         )
         self.assertEqual(payload["year"], 2026)
-        s1 = payload["sessions"][0]["videos"]
-        self.assertEqual([v["video_id"] for v in s1], ["old", "mid"])
+        self.assertEqual(
+            [s["id"] for s in payload["sessions"]],
+            ["s2b", "s2a", "s1"],
+        )
+        self.assertEqual(
+            [v["video_id"] for v in payload["sessions"][0]["videos"]],
+            ["new"],
+        )
         self.assertEqual(
             [v["video_id"] for v in payload["sessions"][1]["videos"]],
             ["mid2"],
         )
         self.assertEqual(
             [v["video_id"] for v in payload["sessions"][2]["videos"]],
-            ["new"],
+            ["old", "mid"],
         )
-        self.assertEqual(payload["sessions"][0]["starts_at"], "2026-01-05")
-        self.assertEqual(payload["sessions"][0]["ends_at"], "2026-01-25")
-        self.assertEqual(payload["sessions"][1]["starts_at"], "2026-02-01")
-        self.assertEqual(payload["sessions"][1]["ends_at"], "2026-02-11")
+        self.assertEqual(payload["sessions"][0]["starts_at"], "2026-02-12")
+        self.assertEqual(payload["sessions"][0]["ends_at"], "2026-02-21")
+        self.assertEqual(payload["sessions"][2]["starts_at"], "2026-01-05")
+        self.assertEqual(payload["sessions"][2]["ends_at"], "2026-01-25")
 
     def test_short_playlist_does_not_invent_videos(self):
         items = [_item("only", "Only", 5)]
@@ -172,12 +179,15 @@ class YearRecordingsTests(unittest.TestCase):
             youtube_client=FakeYouTube(items),
             use_cache=False,
         )
-        self.assertEqual(len(payload["sessions"][0]["videos"]), 1)
-        self.assertEqual(payload["sessions"][1]["videos"], [])
-        self.assertEqual(payload["sessions"][2]["videos"], [])
+        by_id = {s["id"]: s for s in payload["sessions"]}
+        self.assertEqual(len(by_id["s1"]["videos"]), 1)
+        self.assertEqual(by_id["s2a"]["videos"], [])
+        self.assertEqual(by_id["s2b"]["videos"], [])
         # Dates come from config even when a session has no videos yet.
-        self.assertEqual(payload["sessions"][1]["starts_at"], "2026-02-01")
-        self.assertEqual(payload["sessions"][1]["ends_at"], "2026-02-11")
+        self.assertEqual(by_id["s2a"]["starts_at"], "2026-02-01")
+        self.assertEqual(by_id["s2a"]["ends_at"], "2026-02-11")
+        # Newest session first in the returned list.
+        self.assertEqual(payload["sessions"][0]["id"], "s2b")
 
     def test_omits_upcoming_and_live_playlist_videos(self):
         items = [
