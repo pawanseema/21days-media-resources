@@ -47,6 +47,7 @@ const IDLE_COPY = {
 /** Video chips ordered shortest-first so wrap uses less vertical space. */
 const EXAMPLE_PROMPTS = {
   videos: [
+    "How to do Foot Soak",
     "Foot Soak with Mark",
     "Meditation with Flute",
     "Heart chakra meditation",
