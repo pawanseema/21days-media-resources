@@ -42,7 +42,7 @@ TARGET_PLAYLIST_TITLES = [
     "21 Days Meditation Course - January 2026"
 ]
 
-MAX_RECENT_VIDEOS = 42  # Only process N videos per playlist per run
+MAX_RECENT_VIDEOS = 58  # Only process N videos per playlist per run
 PROCESS_OLDEST_FIRST =  True # False=newest first, True=oldest first
 OUTPUT_CSV = get_audit_csv_path()
 CHROMA_DIR = get_chroma_dir()
