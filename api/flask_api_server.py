@@ -1,3 +1,4 @@
+import json
 import sys
 import os
 from flask import Flask, request, jsonify, redirect, send_from_directory
@@ -58,6 +59,20 @@ RESOURCE_ADMIN_HTML = {
     "resource_form.html",
     "resource_update.html",
 }
+
+
+def _log_search(query, event, source):
+    """One JSON line so Cloud Logging can list Explore search text."""
+    print(
+        json.dumps({
+            "severity": "INFO",
+            "message": event,
+            "event": event,
+            "source": source,
+            "query": query,
+        }),
+        flush=True,
+    )
 
 
 def _env_flag(name, default=False):
@@ -329,6 +344,11 @@ def api_explore_query():
         if not isinstance(offset, int) or offset < 0:
             offset = 0
 
+        if mode == "videos":
+            _log_search(query, "video_search", "explore")
+        elif mode == "resources":
+            _log_search(query, "handout_search", "explore")
+
         payload = run_explore_query(
             query,
             mode=mode,
@@ -378,7 +398,9 @@ def api_search():
         top_k = data.get("top_k", 3)
         if not isinstance(top_k, int) or top_k < 1:
             top_k = 3
-        
+
+        _log_search(query, "video_search", "search")
+
         # Perform search
         results = search_video_sections(query, top_k=top_k)
         
@@ -622,7 +644,9 @@ def api_search_resources():
         top_k = data.get("top_k", 5)
         if not isinstance(top_k, int) or top_k < 1:
             top_k = 5
-        
+
+        _log_search(query, "handout_search", "search")
+
         # Perform search
         results = search_resources(query, top_k=top_k)
         
