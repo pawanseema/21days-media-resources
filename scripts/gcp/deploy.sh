@@ -75,6 +75,15 @@ else
   log_info "Skipping build; deploying existing image: ${IMAGE}"
 fi
 
+ENV_VARS="CHROMA_PERSIST_DIR=${CHROMA_MOUNT_PATH},SHOW_RESULT_DEBUG=false,ENABLE_MORE_LIKE_THIS=true,ENABLE_CHROMA_WRITES=false"
+# Empty means no phone update notice. Omit rather than sending a blank value.
+if [[ -n "${LATEST_IOS_VERSION:-}" ]]; then
+  ENV_VARS="${ENV_VARS},LATEST_IOS_VERSION=${LATEST_IOS_VERSION}"
+fi
+if [[ -n "${LATEST_ANDROID_VERSION:-}" ]]; then
+  ENV_VARS="${ENV_VARS},LATEST_ANDROID_VERSION=${LATEST_ANDROID_VERSION}"
+fi
+
 log_info "Deploying Cloud Run service: ${SERVICE}"
 gcloud beta run deploy "${SERVICE}" \
   --project="${PROJECT_ID}" \
@@ -88,7 +97,7 @@ gcloud beta run deploy "${SERVICE}" \
   --memory="${RUN_MEMORY}" \
   --timeout="${RUN_TIMEOUT}" \
   --allow-unauthenticated \
-  --set-env-vars="CHROMA_PERSIST_DIR=${CHROMA_MOUNT_PATH},SHOW_RESULT_DEBUG=false,ENABLE_MORE_LIKE_THIS=true,ENABLE_CHROMA_WRITES=false" \
+  --set-env-vars="${ENV_VARS}" \
   --set-secrets="OPENAI_API_KEY=${SECRET_OPENAI}:latest,YOUTUBE_API_KEY=${SECRET_YOUTUBE}:latest,ADMIN_API_KEY=${SECRET_ADMIN}:latest" \
   --add-volume="mount-path=${CHROMA_MOUNT_PATH},type=cloud-storage,bucket=${BUCKET},readonly=false"
 

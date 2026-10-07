@@ -173,11 +173,17 @@ def api_ui_config():
 
     ENABLE_CHROMA_WRITES: when true, resource/video ingest-update APIs and admin
     HTML forms are allowed. Cloud Run sets false (read-only Chroma); local default true.
+
+    LATEST_IOS_VERSION / LATEST_ANDROID_VERSION: store version names (for example
+    1.0.5). Empty means the mobile apps do not show an update notice. The website
+    ignores these fields.
     """
     return jsonify({
         "showResultDebug": _env_flag("SHOW_RESULT_DEBUG", default=True),
         "enableMoreLikeThis": _env_flag("ENABLE_MORE_LIKE_THIS", default=True),
         "enableChromaWrites": _chroma_writes_enabled(),
+        "latestIosVersion": os.environ.get("LATEST_IOS_VERSION", "").strip(),
+        "latestAndroidVersion": os.environ.get("LATEST_ANDROID_VERSION", "").strip(),
     }), 200
 
 
