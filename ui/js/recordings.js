@@ -30,8 +30,28 @@ function sessionDateRange(session) {
   return "";
 }
 
+/** Newest publication first, matching the mobile Recordings tab. */
+function videosNewestFirst(videos) {
+  return videos
+    .map((video, index) => ({ video, index }))
+    .sort((a, b) => {
+      const aAt = Date.parse(a.video.published_at || "");
+      const bAt = Date.parse(b.video.published_at || "");
+      const aMissing = Number.isNaN(aAt);
+      const bMissing = Number.isNaN(bAt);
+      if (aMissing && bMissing) return b.index - a.index;
+      if (aMissing) return 1;
+      if (bMissing) return -1;
+      if (bAt !== aAt) return bAt - aAt;
+      return b.index - a.index;
+    })
+    .map((entry) => entry.video);
+}
+
 function sessionTile(session) {
-  const videos = (session.videos || []).filter((v) => v && v.video_id);
+  const videos = videosNewestFirst(
+    (session.videos || []).filter((v) => v && v.video_id)
+  );
   if (!videos.length) return "";
   const count = videos.length;
   const range = sessionDateRange(session);
